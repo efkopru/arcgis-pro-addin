@@ -2,6 +2,8 @@
 
 Date: September 28, 2026. Local runtime: ArcGIS Pro 3.7.2, .NET SDK 10.0.204.
 
+The add-ins now live in separate `LegendScaler/` and `MultipleLeaders/` folders. Their build scripts and generated installers are inside those folders. Folder restructuring does not change the native test limitations recorded below.
+
 ## Completed
 
 - Both Release builds compile with zero warnings and zero errors.
@@ -24,4 +26,4 @@ The new package files were placed in the existing per-user add-in locations. Pre
 3. Multiple Leaders: select three points, open Create Shared Label, and verify Cancel, Esc, and title-bar X before placement, including during field lookup.
 4. Enter text, choose Next: place on map, and cancel using Esc, Cancel Placement, and a different map tool. No new graphic should appear.
 5. Create one graphic, then confirm a second click does not create another. Hide the Multiple Leaders graphics layer and confirm the output disappears.
-6. Verify copy/original legend results, leader endpoints, Reconnect Leaders, Undo/Redo, save/reopen, and PDF export using the acceptance tables in both READMEs.
+6. Verify copy/original legend results, leader endpoints, Reconnect Leaders, Undo/Redo, save/reopen, and PDF export using the acceptance tables in the [Legend Scaler README](LegendScaler/README.md) and [Multiple Leaders README](MultipleLeaders/README.md).
