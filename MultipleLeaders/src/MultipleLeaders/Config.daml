@@ -2,7 +2,7 @@
 <ArcGIS xmlns="http://schemas.esri.com/DADF/Registry"
         defaultAssembly="MultipleLeaders.dll"
         defaultNamespace="MultipleLeaders">
-  <AddInInfo id="{C8C6DE4C-828F-4711-B446-AD56BA5FD9B3}" version="0.1.0" desktopVersion="3.7">
+  <AddInInfo id="{C8C6DE4C-828F-4711-B446-AD56BA5FD9B3}" version="0.1.1" desktopVersion="3.7">
     <Name>Multiple Leaders</Name>
     <Description>Create one map label with native leader lines to selected features.</Description>
     <Author>Multiple Leaders contributors</Author>
@@ -24,11 +24,13 @@
       </groups>
       <controls>
         <tool id="MultipleLeaders_PlaceCalloutTool" className="PlaceCalloutTool"
-              caption="Place Label" keytip="PL" loadOnClick="true">
+              caption="Place Label" keytip="PL" loadOnClick="true"
+              smallImage="AnnotationAddLeader16" largeImage="AnnotationAddLeader32">
           <tooltip heading="Place Label">Select features and place a shared label with a leader to each feature.</tooltip>
         </tool>
         <button id="MultipleLeaders_RefreshCalloutButton" className="RefreshCalloutButton"
-                caption="Refresh Leaders" keytip="RL" loadOnClick="true">
+                caption="Refresh Leaders" keytip="RL" loadOnClick="true"
+                smallImage="GenericRefresh16" largeImage="GenericRefresh32">
           <tooltip heading="Refresh Leaders">Refresh a callout's leader anchors from its linked features.</tooltip>
         </button>
       </controls>
