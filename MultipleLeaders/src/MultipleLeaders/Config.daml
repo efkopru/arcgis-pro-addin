@@ -2,11 +2,11 @@
 <ArcGIS xmlns="http://schemas.esri.com/DADF/Registry"
         defaultAssembly="MultipleLeaders.dll"
         defaultNamespace="MultipleLeaders">
-  <AddInInfo id="{C8C6DE4C-828F-4711-B446-AD56BA5FD9B3}" version="0.1.3" desktopVersion="3.7">
+  <AddInInfo id="{C8C6DE4C-828F-4711-B446-AD56BA5FD9B3}" version="0.1.4" desktopVersion="3.7">
     <Name>Multiple Leaders</Name>
     <Description>Connect selected point features to one manually placed text graphic.</Description>
     <Author>Multiple Leaders contributors</Author>
-    <Date>2026-09-28</Date>
+    <Date>2026-09-29</Date>
     <Subject>Labels with multiple leaders</Subject>
   </AddInInfo>
   <modules>
@@ -19,8 +19,10 @@
       <groups>
         <group id="MultipleLeaders_Group" caption="Shared labels" keytip="C" appearsOnAddInTab="false">
           <button refID="MultipleLeaders_CreateCalloutButton" size="large" />
-          <button refID="MultipleLeaders_CancelPlacementButton" size="large" />
+          <button refID="MultipleLeaders_MoveCalloutButton" size="large" />
+          <button refID="MultipleLeaders_ResizeCalloutButton" size="large" />
           <button refID="MultipleLeaders_RefreshCalloutButton" size="large" />
+          <button refID="MultipleLeaders_CancelPlacementButton" size="large" />
         </group>
       </groups>
       <controls>
@@ -28,6 +30,16 @@
                 caption="Create Shared Label" keytip="CL" loadOnClick="false"
                 smallImage="AnnotationAddLeader16" largeImage="AnnotationAddLeader32">
           <tooltip heading="Connect points to one label">Select 2 to 100 points in one layer. Enter shared text, then click its position on the map. Creates a graphic with one leader per distinct point location. Use Undo to reverse creation.</tooltip>
+        </button>
+        <button id="MultipleLeaders_MoveCalloutButton" className="MoveCalloutButton"
+                caption="Move Label" keytip="MV" loadOnClick="false"
+                smallImage="EditingMoveTool16" largeImage="EditingMoveTool32">
+          <tooltip heading="Move the label and keep leaders connected">Use Graphics > Select to select one shared label, then click its new position. The leaders reconnect to the source points. Esc or Cancel Placement stops the move.</tooltip>
+        </button>
+        <button id="MultipleLeaders_ResizeCalloutButton" className="ResizeCalloutButton"
+                caption="Resize Label" keytip="SZ" loadOnClick="false"
+                smallImage="LabelingRibbonTextSymbol16" largeImage="LabelingRibbonTextSymbol32">
+          <tooltip heading="Change label text size">Use Graphics > Select to select one shared label, then set its font size from 6 to 72 points. The label position and leader widths stay the same.</tooltip>
         </button>
         <button id="MultipleLeaders_CancelPlacementButton" className="CancelPlacementButton"
                 caption="Cancel Placement" keytip="CP" loadOnClick="false"

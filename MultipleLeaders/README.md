@@ -1,6 +1,6 @@
 # Multiple Leaders
 
-An independent C# / .NET add-in for **ArcGIS Pro 3.7**. Select point features, place one text graphic, and connect that text to each distinct point location with native leader lines.
+An independent C# / .NET add-in for **ArcGIS Pro 3.7**. Select point features, place one text graphic, and connect that text to each distinct point location with native leader lines. Current package: **0.1.4**.
 
 Everything for this add-in is under `MultipleLeaders/`. It has its own solution, source, checks, build script, and installer, and does not depend on Legend Scaler.
 
@@ -19,17 +19,21 @@ The add-in creates one text graphic in a graphics layer named **Multiple Leaders
 
 **Hide the result:** clear the **Multiple Leaders** layer's visibility checkbox in Contents. Use **Undo** to reverse creation. These controls do not turn automatic labeling on or off; this add-in creates manually placed graphics.
 
-Version **0.1.3** fixes placement that would not exit. Cancellation invalidates the request immediately; tool switching runs after Pro's sketch callbacks finish. Escape also works when the sketch-tip popup has focus. Text entry remains before placement, and each request can create at most one label.
+Version **0.1.4** adds **Move Label**, **Resize Label**, clearer graphic-selection errors, and completion feedback for **Reconnect Leaders**. It retains the placement-exit fixes verified in 0.1.3.
 
-Close **all** Pro instances when updating, including another project window. A stale cache previously retained an older DLL despite updated ribbon configuration. The current native tests used a regenerated **0.1.3.0** DLL verified against the package. See the [validation record](../VALIDATION.md).
+Close **all** Pro instances when updating, including another project window. A stale cache previously retained an older DLL despite updated ribbon configuration. Native tests verify the extracted DLL against the package, not only the ribbon captions. See the [validation record](../VALIDATION.md).
 
 ## Refresh and editing
 
-Select the created graphic using Pro's graphic selection tools or the graphics-layer Contents entries, then choose **Reconnect Leaders**. The command re-reads the original feature IDs and updates leader endpoints, preserving the text position, displayed text, and styling.
+First select the **Multiple Leaders** graphics layer in Contents, choose **Graphics > Select**, and click the shared-label text. The editing commands require one selected label graphic.
 
-Refresh is explicit. It does not automatically respond to feature edits, and it does not recalculate a previously copied field value. Missing source features cause refresh to fail without dropping members. A changed data connection also causes refusal. Create a new label to change membership.
+- **Move Label:** click the new position on the map. The label moves and its leaders reconnect to the current positions of the original source features. Text and styling are preserved. Esc or Cancel Placement cancels the move.
+- **Resize Label:** enter a font size from **6 to 72 points**. This changes text size while preserving the label position, leader endpoints, and leader width.
+- **Reconnect Leaders:** use this after a source point has actually moved. It re-reads the original feature IDs, updates the endpoints, and shows a completion notification. Label position, displayed text, and styling stay unchanged. If the endpoints already match the source points, there is no visible change.
 
-Pro's native graphic formatting tools can edit the text and callout style. If moving the graphic also moves its leader endpoints, **Reconnect Leaders** reconnects them to the original features. Creation appears in native Undo history as **Create shared label with multiple leaders** and a separate **( Elements )** entry. Reversing and reapplying those entries removed and restored the test graphic. This is not a verified single-step Undo operation; intervening visibility changes also have their own entries. Refresh Undo remains unverified.
+Reconnection is explicit and does not refresh text copied from a field. Missing source features or a changed data connection cause refusal without dropping members. Create a new label to change source membership. Pro's native graphic formatting tools remain available for editing text and callout style.
+
+Creation appeared in the 0.1.3 native Undo history as **Create shared label with multiple leaders** and a separate **( Elements )** entry. Undo/Redo removed and restored the test graphic. Version 0.1.4 passed single-step resize and move Undo/Redo. Single-step creation Undo and Undo for reconnect remain unverified.
 
 The graphic stores the source layer URI, ObjectIDs, a hash of the data connection, and creation metadata. Refresh requires the original layer and dataset. Replacing a dataset at the same connection while reusing its ObjectIDs cannot be reliably detected in this prototype.
 
@@ -39,13 +43,14 @@ The graphic stores the source layer URI, ObjectIDs, a hash of the data connectio
 - A centered black text symbol and native line callout, without a background rectangle.
 - Manual text or a shared string-field value. Font size 6–72 points; line width 0.1–5 points; text up to 500 characters.
 - Literal text handling for `<`, `>`, and `&`, so attribute contents are not interpreted as formatting instructions.
-- Projection of source points to the map coordinate system for creation, and to the existing graphic coordinate system for refresh.
+- Projection of source points to the map coordinate system for creation, and to the existing graphic coordinate system for reconnection and movement.
 - Projection changes require the same underlying geographic coordinate system. Cross-GCS inputs are rejected; preproject those data using the intended datum transformation before creating labels.
+- Move Label additionally requires the map and graphics layer to use the same coordinate system. If the map CRS changed after creating the graphics layer, restore that CRS before moving its labels with this command.
 - Rechecks source membership and data connection before changing a graphic.
 
 **This implements manually placed shared-label graphics.** It does not extend Maplex or provide automatic clustering, collision avoidance, scale-dependent regrouping, or feature-linked annotation. The original automatic-labeling request is broader than this first version.
 
-Point feature layers and 2D maps are the initial scope. Multipoints, lines, polygons, scenes, joined-field lookup, automatic field-text refresh, and moved/grouped-label edge cases are outside the qualified scope. Locked or grouped graphics are rejected by refresh. Leader crossings are possible and must be resolved through label placement.
+Point feature layers and 2D maps are the initial scope. Multipoints, lines, polygons, scenes, joined-field lookup, and automatic field-text refresh are outside the qualified scope. Editing commands reject locked or grouped graphics. Leader crossings are possible and must be resolved through label placement.
 
 ## Build
 
@@ -78,9 +83,13 @@ In the isolated synthetic test project, version **0.1.3** passed:
 
 Options-dialog Cancel and Esc were verified in 0.1.2; that dialog code is unchanged in 0.1.3. See [validation details](../VALIDATION.md) for the failed 0.1.2 placement test and remaining coverage.
 
+In a further 0.1.3 check, Reconnect Leaders completed without an error when the endpoints already matched the source points. That produced no visible change. No spatial-reference failure was reproduced.
+
+Native checks in 0.1.4 verified reconnecting after reopening the project with one source point moved from (50, 80) to (75, 100), preserving text position. Resize changed the existing label from 12 to 18 points while retaining leader endpoints; Ctrl+Z and Ctrl+Y reversed and reapplied the resize. The saved CIM retained the edited text, 18-point size, 2-point leader width, and all three correct source endpoints. Move Label relocated the text to the clicked map position, preserved the font and source endpoints, and returned to idle. One Undo restored its previous position. Escape canceled a pending move without changing the label.
+
 ### Further native acceptance
 
-Standalone checks inspect CIM text, leader types, endpoint coordinates, style values, and invalid input handling. The native smoke test covers the simple case above. Broader rendering, geometry persistence, positive refresh, complete Undo behavior, PDF export, and project save/reopen still need qualification.
+Standalone checks inspect CIM text, leader types, endpoint coordinates, style values, and invalid input handling. Native checks cover the simple cases above. Broader styles, projections, interrupted edits, complete Undo behavior, and PDF export still need qualification.
 
 | Test | Expected behavior |
 | --- | --- |
@@ -94,10 +103,11 @@ Standalone checks inspect CIM text, leader types, endpoint coordinates, style va
 | Common string value versus mixed/blank values | Shared text accepted only for a common nonblank value |
 | Source layer and map use different projections of the same GCS | Leaders terminate at the displayed feature locations |
 | Source layer and map use different geographic coordinate systems | Clear rejection before any graphic is created |
-| Move a source point, select graphic, refresh | Endpoint moves to the feature; text position stays fixed |
-| Move the graphic, then refresh | Label stays at its new location; anchors return to source features |
+| Move a source point, select its label with Graphics > Select, reconnect | Endpoint moves to the feature; label position/text stay fixed; completion notification appears |
+| Select a label, Move Label, click a new position | Text moves; leaders stay connected to the original source features |
+| Select a label, Resize Label, enter 6–72 points | Text size changes; position, leader endpoints, and line width remain unchanged |
 | Delete a source point or repoint the layer | Refresh rejects the change and leaves the graphic intact |
-| Undo/Redo creation and refresh | Each named operation reverses/reapplies the complete change |
+| Undo/Redo creation, reconnect, move, and resize | Each named operation reverses/reapplies the complete change |
 | Save/reopen, refresh again, export a layout to PDF | Text, leader anchors, and source metadata persist |
 
 ## Synthetic demo
@@ -114,8 +124,8 @@ Replace the example path with your checkout location. The three selected Alpha p
 ## Source
 
 - `src/MultipleLeaders/CalloutGraphicBuilder.cs`: native text and leader construction, validation, and anchor replacement.
-- `src/MultipleLeaders/CalloutService.cs`: source selection, field lookup, coordinate projection, provenance, graphic creation, and refresh.
-- `src/MultipleLeaders/PlaceCalloutTool.cs`: map-click placement.
+- `src/MultipleLeaders/CalloutService.cs`: source selection, field lookup, coordinate projection, provenance, creation, reconnection, movement, and resizing.
+- `src/MultipleLeaders/PlaceCalloutTool.cs`: map-click placement and movement.
 - `src/MultipleLeaders/CalloutOptionsWindow.xaml`: label and style options.
 - `tests/MultipleLeaders.Checks/`: standalone checks and their limits.
 

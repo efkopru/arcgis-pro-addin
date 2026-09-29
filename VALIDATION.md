@@ -1,8 +1,8 @@
 # Add-in validation
 
-Date: September 28, 2026. Local runtime: ArcGIS Pro 3.7.2, .NET SDK 10.0.204.
+Date: September 29, 2026. Local runtime: ArcGIS Pro 3.7.2, .NET SDK 10.0.204.
 
-Legend Scaler is version **0.1.2**. Multiple Leaders is version **0.1.3**. Each add-in has its own source, build script, checks, and generated installer folder.
+Legend Scaler is version **0.1.2**. Multiple Leaders is version **0.1.4**. Each add-in has its own source, build script, checks, and generated installer folder.
 
 ## Automated checks
 
@@ -43,10 +43,29 @@ Native retesting with the regenerated 0.1.3.0 DLL passed:
 Multiple Leaders package SHA-256: `1976F57C14E699B794D8ED58D85171FD6D3BD71F58A05627FD76B0DE674E9E35`.
 Regenerated 0.1.3.0 DLL SHA-256: `EAE96DD37E74E8EF6F50268B966381972F34D38AC80C849384FC48F029F7AD37`.
 
+## Multiple Leaders 0.1.4 native results
+
+Version 0.1.4 adds Move Label, Resize Label, separate graphic-selection errors, and a completion notification for Reconnect Leaders. It resolves missing graphic spatial references from SDK geometry and the owning graphics layer. Missing per-point spatial references were a code-review concern, not an established cause of the reported failure.
+
+The 0.1.4 Release build passes with zero warnings/errors and all 21 existing standalone checks. The installed package matches the generated package. The extracted DLL is version 0.1.4.0 and matches the packaged DLL by SHA-256.
+
+Final 0.1.4 package SHA-256: `AB96805D2C058CE6A2C76148B38125ECC50345240960C03B2B096B0FD75AB5E7`.
+Final 0.1.4.0 DLL SHA-256: `AE19A04906CB6136943C92E213711193E6623F8B469F5CB9E8C82574FF582C17`.
+
+A backup preserves the synthetic project before changing source ObjectID 3 from (50, 80) to (75, 100) in EPSG:3857. Reopening initially showed the leader still ending at the old location.
+
+- Reconnect Leaders moved that endpoint onto the changed source point while retaining the existing label position and text.
+- Resize Label changed the text from 12 to 18 points without moving the source endpoints. One Ctrl+Z restored the prior size and Ctrl+Y reapplied it. Saved CIM retained the edited text, 18-point size, 2-point leader width, and correct endpoints at (0, 0), (100, 0), and (75, 100).
+- The initial Move implementation updated CIM Shape but did not relocate native point text. The repaired implementation uses SetAnchorPoint, rebuilds leaders from source IDs, and checks the resulting position. Native retesting moved the text to the clicked location while retaining all three source endpoints and the 18-point font, then returned to idle.
+- One Ctrl+Z restored the pre-move label position with its style and endpoints intact. Ctrl+Y reapplied the move.
+- Escape canceled a pending Move request, returned the ribbon to idle, and left the label unchanged.
+
+Move is limited to matching map and graphics-layer coordinate systems because native anchor placement uses bare XY coordinates. Resize and Reconnect do not add this restriction. Tests did not establish the missing-SR fallback or interruption during native mutation.
+
 ## Remaining native coverage
 
 - Legend copy creation; cancellation during queued or running native edits; full symbol/font/fitting/anchor restoration and Redo; richer legend styles.
-- Multiple Leaders cancellation during queued creation or field lookup, title-bar X, rapid duplicate clicks in Pro, coincident points, projection differences, literal special characters, positive Reconnect Leaders, moved/grouped graphics, and complete Undo/Redo metadata restoration.
-- Project save/reopen and PDF export for both add-ins.
+- Multiple Leaders cancellation during queued creation or field lookup, title-bar X, rapid duplicate clicks in Pro, coincident points, projection differences, literal special characters, grouped graphics, and complete Undo/Redo metadata restoration.
+- Broader project persistence and PDF export for both add-ins. Multiple Leaders reopened and reconnected the tested existing label; that does not qualify every style and projection.
 
 The detailed acceptance tables remain in each add-in's README. Automated checks do not establish native rendering, persistence, or worker-queue cancellation behavior.

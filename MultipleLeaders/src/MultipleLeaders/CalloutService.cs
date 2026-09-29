@@ -22,6 +22,14 @@ internal sealed record SelectionSnapshot(
     public required string SourceIdentity { get; init; }
 }
 
+internal sealed record EditableCalloutSnapshot(
+    Map Map, GraphicsLayer Layer, GraphicElement Element, string Name, double FontSize)
+{
+    public required string SourceLayerUri { get; init; }
+    public required string SourceIdentity { get; init; }
+    public required IReadOnlyList<long> ObjectIds { get; init; }
+}
+
 /// <summary>All methods run on Pro's main worker thread through QueuedTask.Run.</summary>
 internal static class CalloutService
 {
@@ -150,25 +158,176 @@ internal static class CalloutService
 
     public static string RefreshSelected(MapView view, CancellationToken cancellationToken = default)
     {
+        var snapshot = CaptureSelected(view, cancellationToken);
+        var before = GetEditableGraphic(snapshot.Element);
+        var position = ResolveGraphicPosition(snapshot, before);
+        var anchors = ReadCurrentAnchors(snapshot, position.SpatialReference, cancellationToken);
+        var positioned = before.Clone();
+        positioned.Shape = position;
+        var updated = CalloutGraphicBuilder.UpdateAnchors(positioned, anchors);
+        return ApplyGraphic(snapshot, before, updated, "Reconnect shared label leaders", cancellationToken);
+    }
+
+    public static EditableCalloutSnapshot CaptureSelected(MapView view,
+        CancellationToken cancellationToken = default)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         var map = ValidateView(view);
         var selected = map.GetLayersAsFlattenedList().OfType<GraphicsLayer>()
-            .SelectMany(layer => layer.GetSelectedElements()).ToArray();
-        if (selected.Length != 1 || selected[0] is not GraphicElement element ||
+            .SelectMany(layer => layer.GetSelectedElements().Select(element => (Layer: layer, Element: element)))
+            .ToArray();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (selected.Length == 0)
+            throw new InvalidOperationException("No label graphic is selected. Use Graphics > Select and click the shared label, then run this command.");
+        if (selected.Length > 1)
+            throw new InvalidOperationException($"{selected.Length} graphics are selected. Use Graphics > Select to select one shared label, then run this command.");
+        if (selected[0].Element is not GraphicElement element ||
             element.GetCustomProperty(Prefix + "Version") != SchemaVersion)
-            throw new InvalidOperationException("Select exactly one shared-label graphic created by Multiple Leaders in the Contents pane.");
-        if (element.IsLocked)
-            throw new InvalidOperationException("Unlock the shared-label graphic before refreshing its leaders.");
-        if (element.GetParent(false) is GroupElement)
-            throw new InvalidOperationException("Ungroup the shared-label graphic before refreshing its leaders.");
-
+            throw new InvalidOperationException("The selected graphic is not a linked Multiple Leaders label. Use Graphics > Select to select a label created by this add-in.");
+        ValidateEditableElement(element);
+        var graphic = GetEditableGraphic(element);
+        var textSymbol = GetTextSymbol(graphic);
         var sourceUri = element.GetCustomProperty(Prefix + "SourceLayerUri");
         var sourceIdentity = element.GetCustomProperty(Prefix + "SourceIdentity");
-        var source = FindSource(map, sourceUri);
+        var ids = ReadSourceIds(element);
+        if (string.IsNullOrWhiteSpace(sourceUri) || string.IsNullOrWhiteSpace(sourceIdentity))
+            throw new InvalidOperationException("This label is missing its source-link metadata. Create a new shared label from the intended source points.");
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(map, selected[0].Layer, element, element.Name, textSymbol.Height)
+        {
+            SourceLayerUri = sourceUri,
+            SourceIdentity = sourceIdentity,
+            ObjectIds = ids
+        };
+    }
+
+    public static string Resize(MapView view, EditableCalloutSnapshot snapshot, double fontSize,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateSnapshot(view, snapshot, cancellationToken);
+        if (!double.IsFinite(fontSize) || fontSize < 6 || fontSize > 72)
+            throw new ArgumentOutOfRangeException(nameof(fontSize), "Font size must be between 6 and 72 points.");
+        var before = GetEditableGraphic(snapshot.Element);
+        var updated = before.Clone();
+        GetTextSymbol(updated).Height = fontSize;
+        return ApplyGraphic(snapshot, before, updated, "Resize shared label text", cancellationToken);
+    }
+
+    public static string Move(MapView view, EditableCalloutSnapshot snapshot, MapPoint labelPosition,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateSnapshot(view, snapshot, cancellationToken);
+        var before = GetEditableGraphic(snapshot.Element);
+        var reference = snapshot.Layer.GetSpatialReference();
+        // The element placement API takes bare XY rather than a spatial reference.
+        // Keep map and layer units identical until differing-CRS placement is verified.
+        if (reference is null || reference.IsUnknown || !reference.IsEqual(snapshot.Map.SpatialReference))
+            throw new InvalidOperationException("Move Label currently requires the map and graphics layer to use the same coordinate system. Restore the map coordinate system used when this graphics layer was created, then try again.");
+        var currentPosition = ProjectPoint(ResolveGraphicPosition(snapshot, before), reference, cancellationToken);
+        var position = ProjectPoint(labelPosition, reference, cancellationToken);
+        var anchors = ReadCurrentAnchors(snapshot, position.SpatialReference, cancellationToken);
+        var originalAnchor = snapshot.Element.GetAnchorPoint();
+        var targetAnchor = new Coordinate2D(
+            originalAnchor.X + position.X - currentPosition.X,
+            originalAnchor.Y + position.Y - currentPosition.Y);
+        if (!double.IsFinite(targetAnchor.X) || !double.IsFinite(targetAnchor.Y))
+            throw new InvalidOperationException("The label's anchor position could not be resolved.");
+        var tolerance = double.IsFinite(reference.XYTolerance) && reference.XYTolerance > 0
+            ? Math.Max(reference.XYTolerance * 2, 1e-6)
+            : 1e-6;
+        cancellationToken.ThrowIfCancellationRequested();
+        snapshot.Map.OperationManager.CreateCompositeOperation(() =>
+        {
+            var mutationAttempted = false;
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                mutationAttempted = true;
+                // SetGraphic preserves a point-text element's native placement in Pro.
+                // Move the actual element before updating its leader endpoints.
+                snapshot.Element.SetAnchorPoint(targetAnchor);
+                cancellationToken.ThrowIfCancellationRequested();
+                var moved = GetEditableGraphic(snapshot.Element);
+                var movedPosition = ProjectPoint(ResolveGraphicPosition(snapshot, moved), reference, cancellationToken);
+                AssertMovedPosition(movedPosition, position, tolerance);
+                var positioned = moved.Clone();
+                positioned.Shape = movedPosition;
+                var updated = CalloutGraphicBuilder.UpdateAnchors(positioned, anchors);
+                snapshot.Element.SetGraphic(updated);
+                cancellationToken.ThrowIfCancellationRequested();
+                var finalPosition = ProjectPoint(
+                    ResolveGraphicPosition(snapshot, GetEditableGraphic(snapshot.Element)), reference, cancellationToken);
+                AssertMovedPosition(finalPosition, position, tolerance);
+            }
+            catch (Exception changeError)
+            {
+                try
+                {
+                    if (mutationAttempted)
+                    {
+                        snapshot.Element.SetAnchorPoint(originalAnchor);
+                        snapshot.Element.SetGraphic(before);
+                        // Rollback must finish even after cancellation, and must not
+                        // silently accept a native placement that failed to restore.
+                        var restoredPosition = ProjectPoint(
+                            ResolveGraphicPosition(snapshot, GetEditableGraphic(snapshot.Element)),
+                            reference, CancellationToken.None);
+                        AssertMovedPosition(restoredPosition, currentPosition, tolerance);
+                    }
+                }
+                catch (Exception restoreError)
+                {
+                    throw new InvalidOperationException(
+                        $"Moving the label failed: {changeError.Message}\nRestoration also failed: {restoreError.Message}\nUse Undo and inspect the graphic before saving.", changeError);
+                }
+                throw;
+            }
+        }, "Move shared label and reconnect leaders");
+        return snapshot.Element.Name;
+    }
+
+    private static void AssertMovedPosition(MapPoint actual, MapPoint expected, double tolerance)
+    {
+        if (Math.Abs(actual.X - expected.X) > tolerance || Math.Abs(actual.Y - expected.Y) > tolerance)
+            throw new InvalidOperationException("ArcGIS Pro did not apply the requested label position.");
+    }
+
+    private static void ValidateSnapshot(MapView view, EditableCalloutSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var map = ValidateView(view);
+        if (map.URI != snapshot.Map.URI)
+            throw new InvalidOperationException("The active map changed. Select the shared label in its source map again.");
+        if (!map.GetLayersAsFlattenedList().Contains(snapshot.Layer) ||
+            !snapshot.Layer.GetElementsAsFlattenedList().Contains(snapshot.Element))
+            throw new InvalidOperationException("The selected label was removed or replaced. Use Graphics > Select to select it again.");
+        ValidateEditableElement(snapshot.Element);
+        if (snapshot.Element.GetCustomProperty(Prefix + "Version") != SchemaVersion ||
+            snapshot.Element.GetCustomProperty(Prefix + "SourceLayerUri") != snapshot.SourceLayerUri ||
+            snapshot.Element.GetCustomProperty(Prefix + "SourceIdentity") != snapshot.SourceIdentity ||
+            !ReadSourceIds(snapshot.Element).SequenceEqual(snapshot.ObjectIds))
+            throw new InvalidOperationException("The selected label's source link changed. Select the label again before editing it.");
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private static void ValidateEditableElement(GraphicElement element)
+    {
+        if (element.IsLocked)
+            throw new InvalidOperationException("Unlock the shared-label graphic before editing it.");
+        if (element.GetParent(false) is GroupElement)
+            throw new InvalidOperationException("Ungroup the shared-label graphic before editing it.");
+    }
+
+    private static long[] ReadSourceIds(GraphicElement element)
+    {
+        var serialized = element.GetCustomProperty(Prefix + "ObjectIds");
+        if (string.IsNullOrWhiteSpace(serialized))
+            throw new InvalidOperationException("This label is missing its source object IDs. Create a new label from the intended source points.");
         long[] ids;
         try
         {
-            ids = JsonSerializer.Deserialize<long[]>(element.GetCustomProperty(Prefix + "ObjectIds"))
+            ids = JsonSerializer.Deserialize<long[]>(serialized)
                 ?? throw new InvalidOperationException("Missing source object IDs.");
         }
         catch (JsonException error)
@@ -176,33 +335,80 @@ internal static class CalloutService
             throw new InvalidOperationException("The graphic's saved source object IDs are invalid.", error);
         }
         ValidateIds(ids);
-        using var featureClass = OpenPointClass(source);
-        ValidateSource(source, sourceIdentity);
-        if (element.GetGraphic() is not CIMTextGraphic before || before.Shape is not MapPoint position ||
-            position.SpatialReference is null || position.SpatialReference.IsUnknown)
-            throw new InvalidOperationException("The selected graphic is no longer a supported point text graphic.");
-        // Preserve the graphic's own coordinate system if the map's system changed.
-        var anchors = ReadAnchors(featureClass, ids, position.SpatialReference, cancellationToken);
-        var updated = CalloutGraphicBuilder.UpdateAnchors(before, anchors);
+        return ids;
+    }
+
+    private static CIMTextGraphic GetEditableGraphic(GraphicElement element)
+    {
+        if (element.GetGraphic() is not CIMTextGraphic graphic || graphic.Shape is not MapPoint)
+            throw new InvalidOperationException("The selected label is no longer a supported point text graphic.");
+        return graphic;
+    }
+
+    private static CIMTextSymbol GetTextSymbol(CIMTextGraphic graphic) =>
+        graphic.Symbol?.Symbol as CIMTextSymbol
+        ?? throw new InvalidOperationException("The selected label's text symbol could not be resolved. Select the label again after reopening the map.");
+
+    private static MapPoint ResolveGraphicPosition(EditableCalloutSnapshot snapshot, CIMTextGraphic graphic)
+    {
+        if (graphic.Shape is MapPoint point && !point.IsEmpty &&
+            point.SpatialReference is { IsUnknown: false })
+            return point;
+
+        // GetGeometry returns SDK-decoded coordinates. Persisted CIM storage can omit
+        // each point's SR and keep it at the graphics-layer storage level instead.
+        // Never interpret raw APRX/CIM storage integer coordinates here.
+        if (snapshot.Element.GetGeometry() is not MapPoint decoded || decoded.IsEmpty ||
+            !double.IsFinite(decoded.X) || !double.IsFinite(decoded.Y))
+            throw new InvalidOperationException("The selected label's position could not be resolved as a point.");
+        if (decoded.SpatialReference is { IsUnknown: false })
+            return decoded;
+        var reference = snapshot.Layer.GetSpatialReference();
+        if (reference is null || reference.IsUnknown)
+            throw new InvalidOperationException("The selected label's graphics layer has no known coordinate system. Its leaders were not changed.");
+        return MapPointBuilderEx.CreateMapPoint(decoded.X, decoded.Y, reference);
+    }
+
+    private static IReadOnlyList<MapPoint> ReadCurrentAnchors(EditableCalloutSnapshot snapshot,
+        SpatialReference reference, CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
-        map.OperationManager.CreateCompositeOperation(() =>
+        var source = FindSource(snapshot.Map, snapshot.SourceLayerUri);
+        using var featureClass = OpenPointClass(source);
+        ValidateSource(source, snapshot.SourceIdentity);
+        return ReadAnchors(featureClass, snapshot.ObjectIds, reference, cancellationToken);
+    }
+
+    private static string ApplyGraphic(EditableCalloutSnapshot snapshot, CIMTextGraphic before,
+        CIMTextGraphic updated, string operationName, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        snapshot.Map.OperationManager.CreateCompositeOperation(() =>
         {
             var mutationAttempted = false;
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 mutationAttempted = true;
-                element.SetGraphic(updated);
+                snapshot.Element.SetGraphic(updated);
                 cancellationToken.ThrowIfCancellationRequested();
             }
-            catch
+            catch (Exception changeError)
             {
-                if (mutationAttempted)
-                    element.SetGraphic(before);
+                try
+                {
+                    if (mutationAttempted)
+                        snapshot.Element.SetGraphic(before);
+                }
+                catch (Exception restoreError)
+                {
+                    throw new InvalidOperationException(
+                        $"Editing the label failed: {changeError.Message}\nRestoration also failed: {restoreError.Message}\nUse Undo and inspect the graphic before saving.", changeError);
+                }
                 throw;
             }
-        }, "Refresh shared label leaders");
-        return element.Name;
+        }, operationName);
+        return snapshot.Element.Name;
     }
 
     private static Map ValidateView(MapView view)

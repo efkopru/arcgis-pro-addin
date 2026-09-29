@@ -15,6 +15,8 @@ internal sealed class PlacementRequest(MapView view, long revision)
     public PlacementLifetime Lifetime { get; } = new();
     public SelectionSnapshot? Selection { get; set; }
     public CalloutOptions? Options { get; set; }
+    public EditableCalloutSnapshot? Editing { get; set; }
+    public bool IsReady => Options is not null || Editing is not null;
 }
 
 internal static class CalloutPlacement
@@ -31,6 +33,8 @@ internal static class CalloutPlacement
             "Cancel Placement"));
 
     public static bool IsExiting => ExitScheduler.IsBusy;
+    public static bool CanStart => !IsExiting && Current is null && MapView.Active is not null &&
+        FrameworkApplication.CurrentTool != ToolId;
     public static IDisposable EnterToolCallback() => ExitScheduler.EnterCallback();
 
     public static PlacementRequest Begin(MapView view)
@@ -78,7 +82,7 @@ internal static class CalloutPlacement
     public static void AttachEscape(PlacementRequest request)
     {
         DetachEscape();
-        if (!ReferenceEquals(Current, request) || request.Options is null ||
+        if (!ReferenceEquals(Current, request) || !request.IsReady ||
             request.Lifetime.Token.IsCancellationRequested || FrameworkApplication.CurrentTool != ToolId)
             return;
         _escapeRequest = request;
@@ -113,14 +117,11 @@ internal static class CalloutPlacement
 
 internal sealed class CreateCalloutButton : Button
 {
-    protected override void OnUpdate() =>
-        Enabled = !CalloutPlacement.IsExiting && CalloutPlacement.Current is null && MapView.Active is not null &&
-            FrameworkApplication.CurrentTool != CalloutPlacement.ToolId;
+    protected override void OnUpdate() => Enabled = CalloutPlacement.CanStart;
 
     protected override async void OnClick()
     {
-        if (CalloutPlacement.IsExiting || CalloutPlacement.Current is not null || MapView.Active is not { } view ||
-            FrameworkApplication.CurrentTool == CalloutPlacement.ToolId) return;
+        if (!CalloutPlacement.CanStart || MapView.Active is not { } view) return;
         var request = CalloutPlacement.Begin(view);
         var token = request.Lifetime.Token;
         var activated = false;
