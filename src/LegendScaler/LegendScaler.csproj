@@ -5,7 +5,7 @@
     <PlatformTarget>x64</PlatformTarget>
     <AssemblyName>LegendScaler</AssemblyName>
     <RootNamespace>LegendScaler</RootNamespace>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
     <Description>Proportional scaling for live ArcGIS Pro layout legends.</Description>
   </PropertyGroup>
   <ItemGroup>

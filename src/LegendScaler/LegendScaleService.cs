@@ -22,8 +22,10 @@ internal static class LegendScaleService
             LegendScaling.GetWarnings(definition));
     }
 
-    public static ScaleResult Apply(LayoutView view, LegendTarget target, double factor, bool createCopy)
+    public static ScaleResult Apply(LayoutView view, LegendTarget target, double factor, bool createCopy,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var layout = view.Layout;
         if (!layout.GetElementsAsFlattenedList().Contains(target.Element))
             throw new InvalidOperationException("The selected legend is no longer in this layout. Close this window and select it again.");
@@ -42,9 +44,9 @@ internal static class LegendScaleService
 
         // Layout setters participate in Pro's operation stack. Group them so
         // creating or changing a legend is a single native Undo action.
+        cancellationToken.ThrowIfCancellationRequested();
         layout.OperationManager.CreateCompositeOperation(() =>
-        {
-            try
+            CancellableLegendEdit.Run(() =>
             {
                 result = createCopy
                     ? (Legend)layout.CopyElements(new[] { original }).Single()
@@ -56,8 +58,10 @@ internal static class LegendScaleService
                     ? LegendScaling.Scale((CIMLegend)result.GetDefinition(), factor)
                     : scaled;
                 UseFixedFontSizes(definition);
+                cancellationToken.ThrowIfCancellationRequested();
                 result.SetDefinition(definition);
-                Resize(result, width * factor, height * factor, x, y, lockedAspect);
+                cancellationToken.ThrowIfCancellationRequested();
+                Resize(result, width * factor, height * factor, x, y, lockedAspect, cancellationToken);
                 if (createCopy)
                 {
                     result.SetName($"{target.Name} ({factor * 100:0.##}%)");
@@ -66,42 +70,38 @@ internal static class LegendScaleService
                     var oldBounds = original.GetBounds();
                     var copyBounds = result.GetBounds();
                     var gap = width * 0.08;
+                    cancellationToken.ThrowIfCancellationRequested();
                     result.SetX(result.GetX() + oldBounds.XMax + gap - copyBounds.XMin);
                 }
+                cancellationToken.ThrowIfCancellationRequested();
                 fitsFrame = result.DoesFitFrame;
                 view.SelectElement(result);
-            }
-            catch (Exception changeError)
+            }, () =>
             {
-                try
+                if (createCopy && result is not null)
+                    layout.DeleteElements(new[] { result });
+                else if (!createCopy)
                 {
-                    if (createCopy && result is not null)
-                        layout.DeleteElements(new[] { result });
-                    else if (!createCopy)
-                    {
-                        original.SetDefinition(before);
-                        Resize(original, width, height, x, y, lockedAspect);
-                    }
+                    original.SetDefinition(before);
+                    Resize(original, width, height, x, y, lockedAspect);
                 }
-                catch (Exception restoreError)
-                {
-                    throw new InvalidOperationException(
-                        $"Scaling failed: {changeError.Message}\nRestoration also failed: {restoreError.Message}\nUse layout Undo and inspect the legend before saving.", changeError);
-                }
-                throw;
-            }
-        }, createCopy ? "Create scaled legend copy" : "Scale legend proportionally");
+            }, cancellationToken),
+            createCopy ? "Create scaled legend copy" : "Scale legend proportionally");
 
         return new(result!.Name, fitsFrame, createCopy);
     }
 
-    private static void Resize(Legend legend, double width, double height, double x, double y, bool lockedAspect)
+    private static void Resize(Legend legend, double width, double height, double x, double y, bool lockedAspect,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         legend.SetLockedAspectRatio(false);
         legend.SetWidth(width);
+        cancellationToken.ThrowIfCancellationRequested();
         legend.SetHeight(height);
         legend.SetX(x);
         legend.SetY(y);
+        cancellationToken.ThrowIfCancellationRequested();
         legend.SetLockedAspectRatio(lockedAspect);
     }
 

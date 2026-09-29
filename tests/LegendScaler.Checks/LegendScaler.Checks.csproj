@@ -10,6 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\src\LegendScaler\LegendScaling.cs" Link="LegendScaling.cs" />
+    <Compile Include="..\..\src\LegendScaler\CancellableLegendEdit.cs" Link="CancellableLegendEdit.cs" />
     <Reference Include="ArcGIS.Core">
       <HintPath>$(ArcGISProInstallDir)\bin\ArcGIS.Core.dll</HintPath>
       <Private>true</Private>

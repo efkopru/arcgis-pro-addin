@@ -40,7 +40,7 @@ def main():
             view.camera.scale *= 1.6
 
     print(f"Created synthetic demo data: {points}")
-    print("Three Alpha points are selected. Use Multiple Leaders > Place Label, then click a label position.")
+    print("Three Alpha points are selected. Use Multiple Leaders > Create Shared Label, enter text, then choose Next: place on map.")
     print("The project has not been saved automatically.")
 
 

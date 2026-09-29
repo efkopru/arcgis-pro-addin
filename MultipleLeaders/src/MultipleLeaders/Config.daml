@@ -2,9 +2,9 @@
 <ArcGIS xmlns="http://schemas.esri.com/DADF/Registry"
         defaultAssembly="MultipleLeaders.dll"
         defaultNamespace="MultipleLeaders">
-  <AddInInfo id="{C8C6DE4C-828F-4711-B446-AD56BA5FD9B3}" version="0.1.1" desktopVersion="3.7">
+  <AddInInfo id="{C8C6DE4C-828F-4711-B446-AD56BA5FD9B3}" version="0.1.2" desktopVersion="3.7">
     <Name>Multiple Leaders</Name>
-    <Description>Create one map label with native leader lines to selected features.</Description>
+    <Description>Connect selected point features to one manually placed text graphic.</Description>
     <Author>Multiple Leaders contributors</Author>
     <Date>2026-09-28</Date>
     <Subject>Labels with multiple leaders</Subject>
@@ -17,21 +17,32 @@
         </tab>
       </tabs>
       <groups>
-        <group id="MultipleLeaders_Group" caption="Callouts" keytip="C" appearsOnAddInTab="false">
-          <tool refID="MultipleLeaders_PlaceCalloutTool" size="large" />
+        <group id="MultipleLeaders_Group" caption="Shared labels" keytip="C" appearsOnAddInTab="false">
+          <button refID="MultipleLeaders_CreateCalloutButton" size="large" />
+          <button refID="MultipleLeaders_CancelPlacementButton" size="large" />
           <button refID="MultipleLeaders_RefreshCalloutButton" size="large" />
         </group>
       </groups>
       <controls>
+        <button id="MultipleLeaders_CreateCalloutButton" className="CreateCalloutButton"
+                caption="Create Shared Label" keytip="CL" loadOnClick="false"
+                smallImage="AnnotationAddLeader16" largeImage="AnnotationAddLeader32">
+          <tooltip heading="Connect points to one label">Select 2 to 100 points in one layer. Enter shared text, then click its position on the map. Creates a graphic with one leader per distinct point location. Use Undo to reverse creation.</tooltip>
+        </button>
+        <button id="MultipleLeaders_CancelPlacementButton" className="CancelPlacementButton"
+                caption="Cancel Placement" keytip="CP" loadOnClick="false"
+                smallImage="Cancel16" largeImage="Cancel32">
+          <tooltip heading="Stop placing a label">Cancel unfinished placement and return to Explore. You can also press Esc in the map or select another tool. Existing labels stay on the map; hide the Multiple Leaders layer to hide them.</tooltip>
+        </button>
         <tool id="MultipleLeaders_PlaceCalloutTool" className="PlaceCalloutTool"
               caption="Place Label" keytip="PL" loadOnClick="true"
               smallImage="AnnotationAddLeader16" largeImage="AnnotationAddLeader32">
-          <tooltip heading="Place Label">Select features and place a shared label with a leader to each feature.</tooltip>
+          <tooltip heading="Place the prepared label">Click once on the map. Esc or Cancel Placement stops the tool.</tooltip>
         </tool>
         <button id="MultipleLeaders_RefreshCalloutButton" className="RefreshCalloutButton"
-                caption="Refresh Leaders" keytip="RL" loadOnClick="true"
+                caption="Reconnect Leaders" keytip="RL" loadOnClick="false"
                 smallImage="GenericRefresh16" largeImage="GenericRefresh32">
-          <tooltip heading="Refresh Leaders">Refresh a callout's leader anchors from its linked features.</tooltip>
+          <tooltip heading="Reconnect lines after moving points">Select a shared-label graphic, then reconnect its leaders to the current positions of its source points. Keeps the label text, position, and style. Updates occur only when you run this command.</tooltip>
         </button>
       </controls>
     </insertModule>

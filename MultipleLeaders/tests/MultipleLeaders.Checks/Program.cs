@@ -19,6 +19,9 @@ var checks = new (string Name, Action Run)[]
     ("Missing, empty and nonfinite point locations are rejected", CheckInvalidPoints),
     ("Boundary sizes and the maximum anchor count are accepted", CheckBoundaries),
     ("Refresh rejects invalid input before native geometry operations", CheckRefreshValidation),
+    ("Cancel before the first click prevents placement", CheckCancelBeforeClick),
+    ("Repeated clicks cannot create duplicate labels", CheckSinglePlacement),
+    ("Cancellation prevents a delayed queued creation and is isolated to its request", CheckQueuedCancellation),
 };
 var failures = 0;
 foreach (var (name, run) in checks)
@@ -33,6 +36,39 @@ foreach (var (name, run) in checks)
 Console.WriteLine($"{checks.Length - failures}/{checks.Length} checks passed.");
 Console.WriteLine("NOT VERIFIED: Pro rendering, geometry persistence, projection, and successful Refresh Leaders.");
 return failures == 0 ? 0 : 1;
+
+static void CheckCancelBeforeClick()
+{
+    var request = new PlacementLifetime();
+    request.Cancel();
+    request.Cancel();
+    Assert(!request.TryClaimPlacement(), "canceled request must reject map clicks");
+    Throws<OperationCanceledException>(() => request.Token.ThrowIfCancellationRequested(), "cancellation token");
+}
+
+static void CheckSinglePlacement()
+{
+    var request = new PlacementLifetime();
+    var claims = 0;
+    Parallel.For(0, 100, _ => { if (request.TryClaimPlacement()) Interlocked.Increment(ref claims); });
+    Equal(1, claims, "only one placement can be scheduled");
+    request.Cancel();
+    Assert(!request.TryClaimPlacement(), "cannot reuse canceled placement");
+}
+
+static void CheckQueuedCancellation()
+{
+    var oldRequest = new PlacementLifetime();
+    var created = false;
+    Assert(oldRequest.TryClaimPlacement(), "first click accepted");
+    Action queuedCreate = () => { oldRequest.Token.ThrowIfCancellationRequested(); created = true; };
+    oldRequest.Cancel();
+    var newRequest = new PlacementLifetime();
+    Throws<OperationCanceledException>(queuedCreate, "delayed worker must cancel");
+    Assert(!created, "no label after cancellation");
+    Assert(newRequest.TryClaimPlacement() && !newRequest.Token.IsCancellationRequested,
+        "old cancellation must not affect a new request");
+}
 
 static MapPoint Point(double x, double y) => MapPointBuilderEx.CreateMapPoint(x, y);
 static MapPoint Label() => Point(25, 40);
