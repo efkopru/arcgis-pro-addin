@@ -1,0 +1,12 @@
+.firecrawl/
+bin/
+obj/
+.vs/
+.tools/
+artifacts/
+*.user
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example

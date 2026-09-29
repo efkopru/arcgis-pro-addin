@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <ArcGISProInstallDir Condition="'$(ArcGISProInstallDir)' == ''">C:\Program Files\ArcGIS\Pro</ArcGISProInstallDir>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+</Project>
