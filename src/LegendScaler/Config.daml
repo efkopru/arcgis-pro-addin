@@ -2,7 +2,7 @@
 <ArcGIS xmlns="http://schemas.esri.com/DADF/Registry"
         defaultAssembly="LegendScaler.dll"
         defaultNamespace="LegendScaler">
-  <AddInInfo id="{B014FA99-86BC-4649-995C-307437D30D10}" version="0.1.0" desktopVersion="3.7">
+  <AddInInfo id="{B014FA99-86BC-4649-995C-307437D30D10}" version="0.1.1" desktopVersion="3.7">
     <Name>Legend Scaler</Name>
     <Description>Scale a selected layout legend proportionally while preserving its connection to the map.</Description>
     <Author>Legend Scaler contributors</Author>
@@ -23,7 +23,8 @@
       </groups>
       <controls>
         <button id="LegendScaler_ScaleLegendButton" className="ScaleLegendButton"
-                caption="Scale Legend" keytip="SL" loadOnClick="true">
+                caption="Scale Legend" keytip="SL" loadOnClick="true"
+                smallImage="EditingScaleTool16" largeImage="EditingScaleTool32">
           <tooltip heading="Scale Legend">Set a percentage for the selected legend's text, patches, spacing, and frame.</tooltip>
         </button>
       </controls>
