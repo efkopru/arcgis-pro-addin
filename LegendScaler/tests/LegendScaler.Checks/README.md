@@ -1,6 +1,6 @@
 # Legend scaling regression checks
 
-Run from the repository root with ArcGIS Pro 3.7 and .NET 10 installed:
+Run from the `LegendScaler` folder with ArcGIS Pro 3.7 and .NET 10 installed:
 
 ```powershell
 dotnet run --project tests/LegendScaler.Checks/LegendScaler.Checks.csproj --configuration Release
