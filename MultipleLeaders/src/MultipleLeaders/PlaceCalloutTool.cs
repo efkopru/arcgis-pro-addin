@@ -19,16 +19,19 @@ internal sealed class PlaceCalloutTool : MapTool
 
     protected override void OnToolKeyDown(MapViewKeyEventArgs args)
     {
-        if (args.Key == Key.Escape) args.Handled = true;
+        using var callback = CalloutPlacement.EnterToolCallback();
+        if (args.Key != Key.Escape) return;
+        args.Handled = true;
+        CalloutPlacement.RequestStop();
     }
 
-    protected override Task HandleKeyDownAsync(MapViewKeyEventArgs args) =>
-        args.Key == Key.Escape ? CalloutPlacement.StopAsync() : Task.CompletedTask;
+    protected override Task HandleKeyDownAsync(MapViewKeyEventArgs args) => Task.CompletedTask;
 
-    protected override async Task<bool> OnSketchCanceledAsync()
+    protected override Task<bool> OnSketchCanceledAsync()
     {
-        await CalloutPlacement.StopAsync();
-        return true;
+        using var callback = CalloutPlacement.EnterToolCallback();
+        CalloutPlacement.RequestStop();
+        return Task.FromResult(true);
     }
 
     protected override Task OnToolDeactivateAsync(bool hasMapViewChanged)
@@ -41,6 +44,7 @@ internal sealed class PlaceCalloutTool : MapTool
 
     protected override async Task<bool> OnSketchCompleteAsync(Geometry geometry)
     {
+        using var callback = CalloutPlacement.EnterToolCallback();
         var request = CalloutPlacement.Current;
         if (request is null || !request.Lifetime.TryClaimPlacement()) return true;
         var token = request.Lifetime.Token;
@@ -61,7 +65,7 @@ internal sealed class PlaceCalloutTool : MapTool
         }
         finally
         {
-            await CalloutPlacement.StopAsync(request);
+            CalloutPlacement.RequestStop(request);
         }
         return true;
     }

@@ -17,7 +17,7 @@ This add-in is self-contained under `LegendScaler/`, with its own solution, sour
 
 Version **0.1.2** fixes dialogs that disabled closing while work was queued. Close remains enabled, queued edits check cancellation, unfinished mutations attempt restoration, and closed windows ignore late completion callbacks. The dialog now explains the percentage, copy versus original, and Undo; technical caveats are in an expandable section.
 
-**Updating an installed version:** close **all** ArcGIS Pro instances before installing and reopening. During the 0.1.2 native test attempt, open Pro processes retained cached 0.1.0 DLLs while reading the new ribbon configuration. New commands were disabled, and replacing those DLLs failed because another process held them open. This was not a successful runtime test of 0.1.2. See [validation record](../VALIDATION.md).
+**Updating an installed version:** close **all** ArcGIS Pro instances before installing and reopening. An earlier attempt retained a stale cached 0.1.0 DLL despite the updated package. During the subsequent QA run, only these add-ins' stale cache directories were renamed into an ignored local QA backup. The Legend Scaler DLL inside the installed package and its regenerated cached copy were verified as **0.1.2.0**, with matching SHA-256 hashes. Native checks then ran in an isolated test setup; no user working project was edited. See [validation record](../VALIDATION.md).
 
 The scale is relative to the currently selected legend. Applying 125% twice produces 156.25% of its starting size. Accepted input is 10% through 1,000%; decimal input follows the current Windows culture. At 100%, scaling the original is disabled, but creating a copy remains available.
 
@@ -56,17 +56,27 @@ The build uses the local Pro assemblies and an offline NuGet configuration. It c
 
 The standalone checks validate the transformation and preservation of CIM properties. They **do not prove** in-app rendering, native undo, PDF export, or save/reopen behavior. Those require the native acceptance checks below.
 
-Verified locally: Pro 3.7.2 assemblies, .NET SDK 10.0.204, Release compilation with zero warnings/errors, 17 passing checks including cancellation/restoration, valid DAML schema, and validated package contents. The cancellation checks exercise the actual edit wrapper, with simulated mutations; they do not establish native restoration behavior. In-app acceptance checks remain pending.
+Verified locally: Pro 3.7.2 assemblies, .NET SDK 10.0.204, Release compilation with zero warnings/errors, 17 passing checks including cancellation/restoration, valid DAML schema, and validated package contents. The cancellation checks exercise the actual edit wrapper, with simulated mutations; they do not establish native restoration behavior.
 
-## Native acceptance checks still required
+## Native verification
+
+The following checks passed in **ArcGIS Pro 3.7.2**, using **Test Legend** in the isolated **Addin QA** test setup with the verified 0.1.2.0 DLL:
+
+- **Close**, **Esc**, and the title-bar **X** each closed the idle dialog.
+- **Scale original** at **125%** changed the frame shown on reinspection from **5.5 × 4.25** to **6.875 × 5.313** layout units. The latter height is rounded in the dialog.
+- **Ctrl+Z**, followed by reinspection, restored the displayed frame to **5.5 × 4.25**.
+
+These results establish dialog exit and the tested original-frame scaling/Undo behavior. They do not establish proportional rendering of every legend component or cancellation while a native edit is queued or running.
+
+### Native acceptance checks still required
 
 | Case | Expected result |
 | --- | --- |
-| Close, Esc, and title-bar X, both idle and while work is queued | Dialog closes; canceled queued work does not edit a legend; no late dialog reappears |
+| Close, Esc, and title-bar X while work is queued or running | Dialog closes; canceled queued work does not edit a legend; unfinished mutations restore safely; no late dialog reappears |
 | Simple polygon, line, and point legends at 50%, 125%, and 200% | Fonts, gaps, patches, and frame change as specified; record any map-symbol mismatch |
 | Mixed font sizes, hidden title, zero spacing | Relative text sizes remain correct; hidden/zero settings remain intact |
 | Copy preview | Original unchanged; separate live legend appears beside it |
-| Scale original, Undo, Redo | One undo restores fonts, frame, fitting, anchor, and symbols; redo reapplies |
+| Scale original, Undo, Redo across legend properties | Beyond the tested frame dimensions, verify fonts, fitting, anchor, and symbols restore; verify Redo |
 | Different element anchors; aspect-ratio lock on/off | Anchor position and original lock setting survive scaling |
 | Save/reopen and export to PDF | Scaled appearance persists and matches the layout |
 | Rename a map layer or change its classes | Both live legends still follow their map connection |

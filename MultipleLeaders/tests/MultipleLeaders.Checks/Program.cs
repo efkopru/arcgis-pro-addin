@@ -22,6 +22,12 @@ var checks = new (string Name, Action Run)[]
     ("Cancel before the first click prevents placement", CheckCancelBeforeClick),
     ("Repeated clicks cannot create duplicate labels", CheckSinglePlacement),
     ("Cancellation prevents a delayed queued creation and is isolated to its request", CheckQueuedCancellation),
+    ("Tool exit waits for callbacks and coalesces repeated cancellation", CheckDeferredExit),
+    ("An intervening callback postpones a posted tool exit without spinning", CheckInterveningCallback),
+    ("Stale exit requests cannot deactivate a newer placement", CheckStaleExit),
+    ("A pending exit respects a different tool selected by the user", CheckDifferentTool),
+    ("Deactivation and reentrant cancellation release the exit busy state", CheckExitReentrancy),
+    ("A failed tool transition reports its error and allows a later request", CheckExitFailure),
 };
 var failures = 0;
 foreach (var (name, run) in checks)
@@ -68,6 +74,137 @@ static void CheckQueuedCancellation()
     Assert(!created, "no label after cancellation");
     Assert(newRequest.TryClaimPlacement() && !newRequest.Token.IsCancellationRequested,
         "old cancellation must not affect a new request");
+}
+
+static void CheckDeferredExit()
+{
+    var queued = new Queue<Action>();
+    var switches = 0;
+    var insideCallback = true;
+    var exits = new PlacementExitScheduler(queued.Enqueue, () => true, () =>
+    {
+        Assert(!insideCallback, "tool transition cannot run inside a MapTool callback");
+        switches++;
+        return Task.CompletedTask;
+    }, error => throw new InvalidOperationException("unexpected tool exit error", error));
+    var revision = exits.BeginRequest();
+    var first = exits.EnterCallback();
+    var nested = exits.EnterCallback();
+    exits.RequestExit(revision);
+    exits.RequestExit(revision);
+    Assert(exits.IsBusy, "pending exit disables a new placement");
+    Equal(0, queued.Count, "no dispatcher work while callback is active");
+    nested.Dispose();
+    Equal(0, queued.Count, "outer callback still owns its lease");
+    first.Dispose();
+    first.Dispose();
+    insideCallback = false;
+    Equal(1, queued.Count, "all cancellation requests coalesce to one post");
+    Equal(0, switches, "posting must not switch tools inline");
+    queued.Dequeue()();
+    Equal(1, switches, "one switch after callback exit");
+    Assert(!exits.IsBusy, "completed exit releases busy state");
+}
+
+static void CheckInterveningCallback()
+{
+    var queued = new Queue<Action>();
+    var switches = 0;
+    var exits = new PlacementExitScheduler(queued.Enqueue, () => true,
+        () => { switches++; return Task.CompletedTask; }, _ => { });
+    var revision = exits.BeginRequest();
+    exits.RequestExit(revision);
+    var callback = exits.EnterCallback();
+    queued.Dequeue()();
+    Equal(0, switches, "new callback blocks the already-posted exit");
+    Equal(0, queued.Count, "do not spin/repost while the callback is active");
+    callback.Dispose();
+    Equal(1, queued.Count, "post once when the intervening callback leaves");
+    queued.Dequeue()();
+    Equal(1, switches, "exit still runs after postponement");
+}
+
+static void CheckStaleExit()
+{
+    var queued = new Queue<Action>();
+    var switches = 0;
+    var exits = new PlacementExitScheduler(queued.Enqueue, () => true,
+        () => { switches++; return Task.CompletedTask; }, _ => { });
+    var oldRevision = exits.BeginRequest();
+    exits.RequestExit(oldRevision);
+    var currentRevision = exits.BeginRequest();
+    queued.Dequeue()();
+    Equal(0, switches, "queued old exit cannot stop the newer placement");
+    exits.RequestExit(oldRevision);
+    Equal(0, queued.Count, "late old callback cannot queue another exit");
+    exits.RequestExit(currentRevision);
+    queued.Dequeue()();
+    Equal(1, switches, "current request can still exit normally");
+}
+
+static void CheckDifferentTool()
+{
+    var queued = new Queue<Action>();
+    var toolIsOurs = true;
+    var switches = 0;
+    var exits = new PlacementExitScheduler(queued.Enqueue, () => toolIsOurs,
+        () => { switches++; return Task.CompletedTask; }, _ => { });
+    var revision = exits.BeginRequest();
+    exits.RequestExit(revision);
+    toolIsOurs = false;
+    queued.Dequeue()();
+    Equal(0, switches, "never replace a tool the user switched to before dispatch");
+    Assert(!exits.IsBusy, "abandoned exit releases busy state");
+    // Cancellation can run while activation is still pending. Its final continuation
+    // can retry with the same revision after that activation completes.
+    toolIsOurs = true;
+    exits.RequestExit(revision);
+    queued.Dequeue()();
+    Equal(1, switches, "same-revision cancellation retries after late activation");
+}
+
+static void CheckExitReentrancy()
+{
+    var queued = new Queue<Action>();
+    var transition = new TaskCompletionSource();
+    var switches = 0;
+    PlacementExitScheduler exits = null!;
+    exits = new PlacementExitScheduler(queued.Enqueue, () => true, () =>
+    {
+        switches++;
+        using (exits.EnterCallback()) exits.RequestExit(exits.Revision);
+        exits.Invalidate(); // Our own tool switch raises OnToolDeactivateAsync.
+        return transition.Task;
+    }, _ => { });
+    var revision = exits.BeginRequest();
+    exits.RequestExit(revision);
+    queued.Dequeue()();
+    Equal(1, switches, "reentrant sketch cancellation cannot start another transition");
+    Equal(0, queued.Count, "no recursive transition is posted");
+    Assert(exits.IsBusy, "deactivation must not prematurely release an in-flight switch");
+    Throws<InvalidOperationException>(() => exits.BeginRequest(), "new request blocked while transition is running");
+    transition.SetResult();
+    Assert(!exits.IsBusy, "transition completion releases busy state even after revision invalidation");
+    Assert(exits.BeginRequest() > revision, "a new request is enabled after transition completion");
+}
+
+static void CheckExitFailure()
+{
+    var queued = new Queue<Action>();
+    var errors = new List<Exception>();
+    var failed = true;
+    var exits = new PlacementExitScheduler(queued.Enqueue, () => true,
+        () => failed ? Task.FromException(new InvalidOperationException("test transition failure")) : Task.CompletedTask,
+        errors.Add);
+    exits.RequestExit(exits.BeginRequest());
+    queued.Dequeue()();
+    Equal(1, errors.Count, "transition error is observed");
+    Assert(!exits.IsBusy, "failed transition releases busy state");
+    failed = false;
+    exits.RequestExit(exits.BeginRequest());
+    queued.Dequeue()();
+    Equal(1, errors.Count, "later successful request does not replay the previous error");
+    Assert(!exits.IsBusy, "later transition finishes normally");
 }
 
 static MapPoint Point(double x, double y) => MapPointBuilderEx.CreateMapPoint(x, y);

@@ -19,9 +19,9 @@ The add-in creates one text graphic in a graphics layer named **Multiple Leaders
 
 **Hide the result:** clear the **Multiple Leaders** layer's visibility checkbox in Contents. Use **Undo** to reverse creation. These controls do not turn automatic labeling on or off; this add-in creates manually placed graphics.
 
-Version **0.1.2** moves text entry before map placement, adds explicit cancellation and Escape handling, and prevents duplicate clicks or stale queued requests from creating another label.
+Version **0.1.3** fixes placement that would not exit. Cancellation invalidates the request immediately; tool switching runs after Pro's sketch callbacks finish. Escape also works when the sketch-tip popup has focus. Text entry remains before placement, and each request can create at most one label.
 
-Close **all** Pro instances when updating, including another project window. The native 0.1.2 test attempt encountered cached 0.1.0 DLLs still held open by Pro. New ribbon configuration alone does not prove the new code loaded. See the [validation record](../VALIDATION.md).
+Close **all** Pro instances when updating, including another project window. A stale cache previously retained an older DLL despite updated ribbon configuration. The current native tests used a regenerated **0.1.3.0** DLL verified against the package. See the [validation record](../VALIDATION.md).
 
 ## Refresh and editing
 
@@ -29,7 +29,7 @@ Select the created graphic using Pro's graphic selection tools or the graphics-l
 
 Refresh is explicit. It does not automatically respond to feature edits, and it does not recalculate a previously copied field value. Missing source features cause refresh to fail without dropping members. A changed data connection also causes refusal. Create a new label to change membership.
 
-Pro's native graphic formatting tools can edit the text and callout style. If moving the graphic also moves its leader endpoints, **Reconnect Leaders** reconnects them to the original features. Creation and refresh are grouped into named map Undo operations; their full behavior still needs native verification.
+Pro's native graphic formatting tools can edit the text and callout style. If moving the graphic also moves its leader endpoints, **Reconnect Leaders** reconnects them to the original features. Creation appears in native Undo history as **Create shared label with multiple leaders** and a separate **( Elements )** entry. Reversing and reapplying those entries removed and restored the test graphic. This is not a verified single-step Undo operation; intervening visibility changes also have their own entries. Refresh Undo remains unverified.
 
 The graphic stores the source layer URI, ObjectIDs, a hash of the data connection, and creation metadata. Refresh requires the original layer and dataset. Replacing a dataset at the same connection while reusing its ObjectIDs cannot be reliably detected in this prototype.
 
@@ -61,13 +61,26 @@ From this folder:
 
 The build uses local Pro assemblies, validates the DAML against the installed schema, runs the standalone checks, and packages `artifacts/MultipleLeaders.esriAddinX`. It does not install the package. It excludes Esri runtime assemblies and preserves a prior installer until the new build and checks succeed.
 
-Verified locally against Pro 3.7.2: compilation with zero warnings/errors and 15 passing standalone checks, including cancellation before a click, duplicate/concurrent clicks, and cancellation before a delayed worker runs. These exercise the placement lifetime, not native MapTool keyboard dispatch. Full in-Pro acceptance remains pending.
+Verified locally against Pro 3.7.2: Release compilation with zero warnings/errors and **21 passing standalone checks**, including cancellation before a click, duplicate/concurrent clicks, delayed work, callback-safe tool switching, stale requests, reentrant cancellation, and failed transitions.
 
 Open `MultipleLeaders.slnx` in Visual Studio to develop both the add-in and its check harness.
 
-## Native verification still required
+## Native verification
 
-Standalone checks inspect the created CIM text, leader types, direct endpoint coordinates, style values, and invalid input handling. **Geometry serialization, positive refresh, UI rendering, Undo, PDF export, and project save/reopen require ArcGIS Pro's native runtime.** Passing standalone checks does not establish those behaviors.
+In the isolated synthetic test project, version **0.1.3** passed:
+
+- Esc before the first click with sketch-tip focus, and Cancel Placement. Both returned to idle without adding a graphic and allowed another placement request.
+- Switching to Pro's Explore tool canceled placement and restored idle controls without creating the canceled label.
+- Shared-field lookup and creation of one Buildings label with three visible leaders terminating at the selected points.
+- Automatic exit after creation, with Create Shared Label enabled and Cancel Placement disabled.
+- Hiding the graphics layer hid the text and leaders.
+- Named Undo/Redo history entries removed and restored the graphic, subject to the separate-entry limitation above.
+
+Options-dialog Cancel and Esc were verified in 0.1.2; that dialog code is unchanged in 0.1.3. See [validation details](../VALIDATION.md) for the failed 0.1.2 placement test and remaining coverage.
+
+### Further native acceptance
+
+Standalone checks inspect CIM text, leader types, endpoint coordinates, style values, and invalid input handling. The native smoke test covers the simple case above. Broader rendering, geometry persistence, positive refresh, complete Undo behavior, PDF export, and project save/reopen still need qualification.
 
 | Test | Expected behavior |
 | --- | --- |
