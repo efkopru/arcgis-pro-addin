@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="..\..\src\MultipleLeaders\CalloutGraphicBuilder.cs" Link="CalloutGraphicBuilder.cs" />
     <Compile Include="..\..\src\MultipleLeaders\PlacementLifetime.cs" Link="PlacementLifetime.cs" />
+    <Compile Include="..\..\src\MultipleLeaders\PlacementExitScheduler.cs" Link="PlacementExitScheduler.cs" />
     <Reference Include="ArcGIS.Core">
       <HintPath>$(ArcGISProInstallDir)\bin\ArcGIS.Core.dll</HintPath>
       <Private>true</Private>
