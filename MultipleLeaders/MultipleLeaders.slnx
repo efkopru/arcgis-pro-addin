@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/MultipleLeaders/MultipleLeaders.csproj" />
+  <Project Path="tests/MultipleLeaders.Checks/MultipleLeaders.Checks.csproj" />
+</Solution>

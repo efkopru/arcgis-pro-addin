@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/LegendScaler/LegendScaler.csproj" />
+  <Project Path="tests/LegendScaler.Checks/LegendScaler.Checks.csproj" />
+</Solution>

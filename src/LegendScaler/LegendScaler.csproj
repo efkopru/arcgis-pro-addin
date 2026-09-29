@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>LegendScaler</AssemblyName>
+    <RootNamespace>LegendScaler</RootNamespace>
+    <Version>0.1.0</Version>
+    <Description>Proportional scaling for live ArcGIS Pro layout legends.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="ArcGIS.Core" HintPath="$(ArcGISProInstallDir)\bin\ArcGIS.Core.dll" Private="false" />
+    <Reference Include="ArcGIS.Desktop.Framework" HintPath="$(ArcGISProInstallDir)\bin\ArcGIS.Desktop.Framework.dll" Private="false" />
+    <Reference Include="ArcGIS.Desktop.Core" HintPath="$(ArcGISProInstallDir)\bin\Extensions\Core\ArcGIS.Desktop.Core.dll" Private="false" />
+    <Reference Include="ArcGIS.Desktop.Layouts" HintPath="$(ArcGISProInstallDir)\bin\Extensions\Layout\ArcGIS.Desktop.Layouts.dll" Private="false" />
+    <Reference Include="ArcGIS.Desktop.Mapping" HintPath="$(ArcGISProInstallDir)\bin\Extensions\Mapping\ArcGIS.Desktop.Mapping.dll" Private="false" />
+  </ItemGroup>
+  <Target Name="CheckArcGISInstallation" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(ArcGISProInstallDir)\bin\ArcGIS.Core.dll')" Text="ArcGIS Pro 3.7 is required. Set ArcGISProInstallDir to its installation folder." />
+  </Target>
+</Project>
