@@ -5,7 +5,11 @@ Two independent C# / .NET add-ins for **ArcGIS Pro 3.7**, each contained in its 
 | Add-in | Purpose | Documentation |
 | --- | --- | --- |
 | Legend Scaler | Resize a layout legend's text, patches, spacing, and frame by a percentage. | [LegendScaler/README.md](LegendScaler/README.md) |
-| Multiple Leaders | Place one shared text graphic with leader lines to selected point features. | [MultipleLeaders/README.md](MultipleLeaders/README.md) |
+| Multiple Leaders | Create, move, and resize one shared text graphic connected to selected point features. | [MultipleLeaders/README.md](MultipleLeaders/README.md) |
+
+**Legend Tools** is the ribbon tab for Legend Scaler. Open a layout, select its legend, and choose a percentage. For example, 125% enlarges supported text, spacing, symbol patches, and frame dimensions by 25%. Apply it to the original legend or create a scaled copy. It does not change map zoom or feature labels; some symbol sizes remain controlled by the source renderer.
+
+**Multiple Leaders** works in a map. After creating a shared label, use **Graphics > Select** to select the text. **Move Label** places it at your next click, **Resize Label** changes its font size, and **Reconnect Leaders** updates endpoints after the source points move.
 
 ## Project layout
 
