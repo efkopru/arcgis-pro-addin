@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using ArcGIS.Core.CIM;
 using ArcGIS.Core.Data;
 using ArcGIS.Core.Geometry;
@@ -29,10 +30,12 @@ internal static class CalloutService
     private const string SchemaVersion = "1";
     private const int MaximumFeatures = 100;
 
-    public static SelectionSnapshot Capture(MapView view)
+    public static SelectionSnapshot Capture(MapView view, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var map = ValidateView(view);
         var selected = map.GetSelection().ToDictionary().Where(pair => pair.Value.Count > 0).ToArray();
+        cancellationToken.ThrowIfCancellationRequested();
         if (selected.Length != 1 || selected[0].Key is not FeatureLayer layer)
             throw new InvalidOperationException("Select point features from exactly one feature layer. Clear selections in other layers and tables.");
 
@@ -45,37 +48,43 @@ internal static class CalloutService
             .Select(field => field.Name)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        return new(map, layer, layer.URI, layer.Name, ids,
-            ReadAnchors(featureClass, ids, map.SpatialReference), fields)
+        var snapshot = new SelectionSnapshot(map, layer, layer.URI, layer.Name, ids,
+            ReadAnchors(featureClass, ids, map.SpatialReference, cancellationToken), fields)
         {
             SourceIdentity = GetSourceIdentity(layer)
         };
+        cancellationToken.ThrowIfCancellationRequested();
+        return snapshot;
     }
 
-    public static string GetCommonFieldText(SelectionSnapshot snapshot, string fieldName)
+    public static string GetCommonFieldText(SelectionSnapshot snapshot, string fieldName,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var layer = FindSource(snapshot.Map, snapshot.LayerUri);
         using var featureClass = OpenPointClass(layer);
         ValidateSource(layer, snapshot.SourceIdentity);
-        return ReadCommonText(featureClass, snapshot.ObjectIds, fieldName);
+        return ReadCommonText(featureClass, snapshot.ObjectIds, fieldName, cancellationToken);
     }
 
     public static string Create(MapView view, SelectionSnapshot snapshot, MapPoint labelPosition,
-        string text, double fontSize, double lineWidth, string? sourceField = null)
+        string text, double fontSize, double lineWidth, string? sourceField = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var map = ValidateView(view);
         if (map.URI != snapshot.Map.URI)
-            throw new InvalidOperationException("The active map changed. Start Place Label again in the source map.");
+            throw new InvalidOperationException("The active map changed. Start Create Shared Label again in the source map.");
 
         ValidateIds(snapshot.ObjectIds);
         var source = FindSource(map, snapshot.LayerUri);
         using var featureClass = OpenPointClass(source);
         ValidateSource(source, snapshot.SourceIdentity);
         // Re-read the captured IDs, never the current selection, after the options dialog.
-        var anchors = ReadAnchors(featureClass, snapshot.ObjectIds, map.SpatialReference);
+        var anchors = ReadAnchors(featureClass, snapshot.ObjectIds, map.SpatialReference, cancellationToken);
         if (!string.IsNullOrEmpty(sourceField))
-            text = ReadCommonText(featureClass, snapshot.ObjectIds, sourceField);
-        var position = ProjectPoint(labelPosition, map.SpatialReference);
+            text = ReadCommonText(featureClass, snapshot.ObjectIds, sourceField, cancellationToken);
+        var position = ProjectPoint(labelPosition, map.SpatialReference, cancellationToken);
         var graphic = CalloutGraphicBuilder.Create(text, position, anchors, fontSize, lineWidth);
         var name = $"Shared label ({anchors.Count} points) {Guid.NewGuid():N}";
         var properties = new[]
@@ -96,10 +105,12 @@ internal static class CalloutService
                     .Any(element => element.GetCustomProperty(Prefix + "Version") == SchemaVersion)));
         GraphicElement? element = null;
         var addedLayer = false;
+        cancellationToken.ThrowIfCancellationRequested();
         map.OperationManager.CreateCompositeOperation(() =>
         {
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (target is null)
                 {
                     target = LayerFactory.Instance.CreateLayer<GraphicsLayer>(
@@ -109,8 +120,12 @@ internal static class CalloutService
                 else if (!target.IsVisible)
                     throw new InvalidOperationException("Make the Multiple Leaders graphics layer visible before creating another label.");
 
+                cancellationToken.ThrowIfCancellationRequested();
                 element = ElementFactory.Instance.CreateGraphicElement(target, graphic, name, true);
+                cancellationToken.ThrowIfCancellationRequested();
                 element.SetCustomProperties(properties);
+                // Cancellation during either SDK mutation must pass through cleanup.
+                cancellationToken.ThrowIfCancellationRequested();
             }
             catch (Exception createError)
             {
@@ -129,11 +144,13 @@ internal static class CalloutService
                 throw;
             }
         }, "Create shared label with multiple leaders");
+        // The operation is committed. Do not report cancellation after this boundary.
         return element!.Name;
     }
 
-    public static string RefreshSelected(MapView view)
+    public static string RefreshSelected(MapView view, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var map = ValidateView(view);
         var selected = map.GetLayersAsFlattenedList().OfType<GraphicsLayer>()
             .SelectMany(layer => layer.GetSelectedElements()).ToArray();
@@ -165,17 +182,23 @@ internal static class CalloutService
             position.SpatialReference is null || position.SpatialReference.IsUnknown)
             throw new InvalidOperationException("The selected graphic is no longer a supported point text graphic.");
         // Preserve the graphic's own coordinate system if the map's system changed.
-        var anchors = ReadAnchors(featureClass, ids, position.SpatialReference);
+        var anchors = ReadAnchors(featureClass, ids, position.SpatialReference, cancellationToken);
         var updated = CalloutGraphicBuilder.UpdateAnchors(before, anchors);
+        cancellationToken.ThrowIfCancellationRequested();
         map.OperationManager.CreateCompositeOperation(() =>
         {
+            var mutationAttempted = false;
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                mutationAttempted = true;
                 element.SetGraphic(updated);
+                cancellationToken.ThrowIfCancellationRequested();
             }
             catch
             {
-                element.SetGraphic(before);
+                if (mutationAttempted)
+                    element.SetGraphic(before);
                 throw;
             }
         }, "Refresh shared label leaders");
@@ -210,30 +233,39 @@ internal static class CalloutService
     }
 
     private static IReadOnlyList<MapPoint> ReadAnchors(FeatureClass featureClass,
-        IReadOnlyList<long> ids, SpatialReference mapReference)
+        IReadOnlyList<long> ids, SpatialReference mapReference, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var points = new Dictionary<long, MapPoint>();
         using var definition = featureClass.GetDefinition();
+        cancellationToken.ThrowIfCancellationRequested();
         using var cursor = featureClass.Search(new QueryFilter
         {
             ObjectIDs = ids.ToArray(),
             SubFields = $"{definition.GetObjectIDField()},{definition.GetShapeField()}"
         }, false);
-        while (cursor.MoveNext())
+        while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!cursor.MoveNext())
+                break;
+            cancellationToken.ThrowIfCancellationRequested();
             using var feature = (Feature)cursor.Current;
             if (feature.GetShape() is not MapPoint point || point.IsEmpty)
                 throw new InvalidOperationException($"Source feature {feature.GetObjectID()} has no usable point geometry. No graphic was changed.");
-            points.Add(feature.GetObjectID(), ProjectPoint(point, mapReference));
+            points.Add(feature.GetObjectID(), ProjectPoint(point, mapReference, cancellationToken));
         }
+        cancellationToken.ThrowIfCancellationRequested();
         var missing = ids.Where(id => !points.ContainsKey(id)).ToArray();
         if (missing.Length > 0)
             throw new InvalidOperationException($"{missing.Length} source feature(s) are missing or inaccessible. No graphic was changed. Create a new label with the intended members.");
         return ids.Select(id => points[id]).ToArray();
     }
 
-    private static MapPoint ProjectPoint(MapPoint point, SpatialReference mapReference)
+    private static MapPoint ProjectPoint(MapPoint point, SpatialReference mapReference,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (point.IsEmpty || point.SpatialReference is null || point.SpatialReference.IsUnknown)
             throw new InvalidOperationException("Every source point and the label position need a known coordinate system.");
         // Project() chooses its own default datum transformation; it does not honor
@@ -246,25 +278,33 @@ internal static class CalloutService
             throw new InvalidOperationException(
                 "The source and target use different geographic coordinate systems. This prototype does not apply geographic transformations. Project the source data into the map coordinate system using the intended transformation, then create a new shared label.");
         var projected = (MapPoint)GeometryEngine.Instance.Project(point, mapReference);
+        cancellationToken.ThrowIfCancellationRequested();
         if (projected.IsEmpty || !double.IsFinite(projected.X) || !double.IsFinite(projected.Y))
             throw new InvalidOperationException("A point cannot be projected into the map's coordinate system.");
         return MapPointBuilderEx.CreateMapPoint(projected.X, projected.Y, mapReference);
     }
 
-    private static string ReadCommonText(FeatureClass featureClass, IReadOnlyList<long> ids, string fieldName)
+    private static string ReadCommonText(FeatureClass featureClass, IReadOnlyList<long> ids, string fieldName,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         using var definition = featureClass.GetDefinition();
         var field = definition.GetFields().SingleOrDefault(candidate => candidate.Name == fieldName && candidate.FieldType == FieldType.String)
             ?? throw new InvalidOperationException("Choose an available text field from the source feature class.");
         var seen = new HashSet<long>();
         string? common = null;
+        cancellationToken.ThrowIfCancellationRequested();
         using var cursor = featureClass.Search(new QueryFilter
         {
             ObjectIDs = ids.ToArray(),
             SubFields = $"{definition.GetObjectIDField()},{field.Name}"
         }, false);
-        while (cursor.MoveNext())
+        while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!cursor.MoveNext())
+                break;
+            cancellationToken.ThrowIfCancellationRequested();
             using var row = cursor.Current;
             var value = row[field.Name] as string;
             if (string.IsNullOrWhiteSpace(value))
@@ -274,6 +314,7 @@ internal static class CalloutService
             common = value;
             seen.Add(row.GetObjectID());
         }
+        cancellationToken.ThrowIfCancellationRequested();
         if (seen.Count != ids.Count || common is null)
             throw new InvalidOperationException("Some source features are missing or inaccessible. Select the intended features again.");
         return common;

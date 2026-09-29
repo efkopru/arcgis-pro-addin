@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using ArcGIS.Desktop.Framework.Controls;
 using ArcGIS.Desktop.Framework.Threading.Tasks;
 
@@ -14,12 +15,15 @@ internal partial class CalloutOptionsWindow : ProWindow
     private readonly SelectionSnapshot _selection;
     private bool _ready;
     private bool _busy;
+    private bool _closed;
+    private readonly CancellationTokenSource _cancellation;
     private string? _sourceField;
     public CalloutOptions? Options { get; private set; }
 
-    public CalloutOptionsWindow(SelectionSnapshot selection)
+    public CalloutOptionsWindow(SelectionSnapshot selection, CancellationToken cancellationToken = default)
     {
         _selection = selection;
+        _cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         InitializeComponent();
         SelectionText.Text = $"{selection.ObjectIds.Count} selected points in {selection.LayerName}";
         FieldBox.ItemsSource = selection.TextFields;
@@ -71,28 +75,34 @@ internal partial class CalloutOptionsWindow : ProWindow
 
     private void UpdateInput()
     {
+        if (_closed) return;
         CreateButton.IsEnabled = TryOptions(out _, out var error) && !_busy;
         FieldButton.IsEnabled = !_busy && _selection.TextFields.Count > 0;
-        ErrorText.Text = error;
+        ErrorText.Text = string.IsNullOrWhiteSpace(LabelBox.Text) ? "" : error;
     }
 
     private async void SharedFieldClick(object sender, RoutedEventArgs e)
     {
-        if (_busy || FieldBox.SelectedItem is not string field) return;
+        if (_busy || _closed || FieldBox.SelectedItem is not string field) return;
+        var token = _cancellation.Token;
         _busy = true;
         UpdateInput();
         LabelBox.IsEnabled = false;
         FieldBox.IsEnabled = false;
-        CancelButton.IsEnabled = false;
+        StatusText.Text = "Reading the shared field value. Cancel or Esc closes this window.";
         try
         {
-            LabelBox.Text = await QueuedTask.Run(() => CalloutService.GetCommonFieldText(_selection, field));
+            var text = await QueuedTask.Run(() => CalloutService.GetCommonFieldText(_selection, field, token));
+            if (_closed || token.IsCancellationRequested) return;
+            LabelBox.Text = text;
             _sourceField = field;
             _busy = false;
             UpdateInput();
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)
         {
+            if (_closed) return;
             _busy = false;
             UpdateInput();
             ErrorText.Text = ex.Message;
@@ -100,10 +110,13 @@ internal partial class CalloutOptionsWindow : ProWindow
         finally
         {
             _busy = false;
-            LabelBox.IsEnabled = true;
-            FieldBox.IsEnabled = true;
-            CancelButton.IsEnabled = true;
-            FieldButton.IsEnabled = _selection.TextFields.Count > 0;
+            if (!_closed)
+            {
+                LabelBox.IsEnabled = true;
+                FieldBox.IsEnabled = true;
+                FieldButton.IsEnabled = _selection.TextFields.Count > 0;
+                StatusText.Text = "";
+            }
         }
     }
 
@@ -120,7 +133,27 @@ internal partial class CalloutOptionsWindow : ProWindow
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        if (_busy) e.Cancel = true;
+        _cancellation.Cancel();
         base.OnClosing(e);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _closed = true;
+        _cancellation.Dispose();
+        base.OnClosed(e);
+    }
+
+    private void CancelClick(object sender, RoutedEventArgs e) => Close();
+
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            Close();
+            return;
+        }
+        base.OnPreviewKeyDown(e);
     }
 }

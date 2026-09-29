@@ -10,6 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\src\MultipleLeaders\CalloutGraphicBuilder.cs" Link="CalloutGraphicBuilder.cs" />
+    <Compile Include="..\..\src\MultipleLeaders\PlacementLifetime.cs" Link="PlacementLifetime.cs" />
     <Reference Include="ArcGIS.Core">
       <HintPath>$(ArcGISProInstallDir)\bin\ArcGIS.Core.dll</HintPath>
       <Private>true</Private>

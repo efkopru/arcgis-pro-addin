@@ -9,19 +9,27 @@ Everything for this add-in is under `MultipleLeaders/`. It has its own solution,
 1. Run `./build.ps1` from this folder to create `artifacts/MultipleLeaders.esriAddinX`. Close ArcGIS Pro and double-click that package. The package is unsigned; organization add-in settings may restrict its installation.
 2. Reopen Pro and activate a **2D map** with a known coordinate system.
 3. Select **2–100 point features in exactly one feature layer**. Clear selections in other layers. At least two distinct point locations are required.
-4. Open **Multiple Leaders > Place Label**, then click the desired label position on the map.
+4. Open **Multiple Leaders > Create Shared Label**. The dialog illustrates how several points connect to one label.
 5. Enter the shared text, or select a string field and click **Use shared value**. The field must have the same nonblank value for every selected feature.
-6. Set the font size and leader width, then click **Create label**.
+6. Set the font size and leader width, then click **Next: place on map**. Click once at the desired label position. A cursor tip explains placement and Escape.
 
-The add-in creates one text graphic in a graphics layer named **Multiple Leaders**. The tool returns to Explore after placement or cancellation. The source features and their attributes are not changed. Repeated coincident points produce one visible leader for that location.
+The add-in creates one text graphic in a graphics layer named **Multiple Leaders**. The tool returns to Explore after one placement. The source features and their attributes are not changed. Repeated coincident points produce one visible leader for that location.
+
+**Stop placing:** press **Esc** in the map, click **Cancel Placement**, or select another tool. Cancel and the title-bar X close the text dialog, including during a shared-field lookup. Cancellation prevents a queued creation from starting; cancellation during a mutation attempts to restore the prior state. An already completed label remains on the map.
+
+**Hide the result:** clear the **Multiple Leaders** layer's visibility checkbox in Contents. Use **Undo** to reverse creation. These controls do not turn automatic labeling on or off; this add-in creates manually placed graphics.
+
+Version **0.1.2** moves text entry before map placement, adds explicit cancellation and Escape handling, and prevents duplicate clicks or stale queued requests from creating another label.
+
+Close **all** Pro instances when updating, including another project window. The native 0.1.2 test attempt encountered cached 0.1.0 DLLs still held open by Pro. New ribbon configuration alone does not prove the new code loaded. See the [validation record](../VALIDATION.md).
 
 ## Refresh and editing
 
-Select the created graphic using Pro's graphic selection tools or the graphics-layer Contents entries, then choose **Refresh Leaders**. The command re-reads the original feature IDs and updates leader endpoints, preserving the text position, displayed text, and styling.
+Select the created graphic using Pro's graphic selection tools or the graphics-layer Contents entries, then choose **Reconnect Leaders**. The command re-reads the original feature IDs and updates leader endpoints, preserving the text position, displayed text, and styling.
 
 Refresh is explicit. It does not automatically respond to feature edits, and it does not recalculate a previously copied field value. Missing source features cause refresh to fail without dropping members. A changed data connection also causes refusal. Create a new label to change membership.
 
-Pro's native graphic formatting tools can edit the text and callout style. If moving the graphic also moves its leader endpoints, **Refresh Leaders** reconnects them to the original features. Creation and refresh are grouped into named map Undo operations; their full behavior still needs native verification.
+Pro's native graphic formatting tools can edit the text and callout style. If moving the graphic also moves its leader endpoints, **Reconnect Leaders** reconnects them to the original features. Creation and refresh are grouped into named map Undo operations; their full behavior still needs native verification.
 
 The graphic stores the source layer URI, ObjectIDs, a hash of the data connection, and creation metadata. Refresh requires the original layer and dataset. Replacing a dataset at the same connection while reusing its ObjectIDs cannot be reliably detected in this prototype.
 
@@ -53,7 +61,7 @@ From this folder:
 
 The build uses local Pro assemblies, validates the DAML against the installed schema, runs the standalone checks, and packages `artifacts/MultipleLeaders.esriAddinX`. It does not install the package. It excludes Esri runtime assemblies and preserves a prior installer until the new build and checks succeed.
 
-Verified locally against Pro 3.7.2: compilation with zero warnings/errors and 12 passing standalone checks. Full in-Pro acceptance remains pending.
+Verified locally against Pro 3.7.2: compilation with zero warnings/errors and 15 passing standalone checks, including cancellation before a click, duplicate/concurrent clicks, and cancellation before a delayed worker runs. These exercise the placement lifetime, not native MapTool keyboard dispatch. Full in-Pro acceptance remains pending.
 
 Open `MultipleLeaders.slnx` in Visual Studio to develop both the add-in and its check harness.
 
@@ -63,6 +71,10 @@ Standalone checks inspect the created CIM text, leader types, direct endpoint co
 
 | Test | Expected behavior |
 | --- | --- |
+| Cancel, Esc, and title-bar X in the text dialog | Dialog closes, including during field lookup; no placement starts |
+| Esc before the first map click; Cancel Placement; switch to Explore | No graphic is created; placement stops |
+| Cancel while creation waits in the worker queue | Delayed creation does not add a graphic |
+| Double-click, cancel, then start again | At most one label per request; old continuations do not affect the new request |
 | Three selected points, one clicked label location | One label, three leaders terminating at the points |
 | Coincident points plus another point | One leader per distinct XY location |
 | Text containing `A & B <test>` | Literal characters display; no formatting is injected |
@@ -84,7 +96,7 @@ import runpy
 runpy.run_path(r"C:\path\to\arcgis-pro-addin\MultipleLeaders\examples\create_demo.py", run_name="__main__")
 ```
 
-Replace the example path with your checkout location. The three selected Alpha points share `GROUP_NAME = Alpha`. Use Place Label, click near the points, and choose that field to exercise the complete creation workflow. The demo script itself must also be run and verified inside Pro.
+Replace the example path with your checkout location. The three selected Alpha points share `GROUP_NAME = Alpha`. Use Create Shared Label, choose that field, click Next: place on map, then click near the points. The demo script itself must also be run and verified inside Pro.
 
 ## Source
 

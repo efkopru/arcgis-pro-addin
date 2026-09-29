@@ -19,6 +19,9 @@ var checks = new (string Name, Action Run)[]
     ("Invalid factors and null input fail explicitly", CheckValidation),
     ("Factor boundaries and missing optional content are accepted", CheckOptionalContent),
     ("Unsupported content produces warnings without changing source", CheckWarnings),
+    ("Cancellation before queued work prevents mutation", CheckCancelledBeforeEdit),
+    ("Cancellation during edits restores the original state", CheckCancelledDuringEdit),
+    ("Failed edits restore state and failed restoration is reported", CheckEditRestoration),
 };
 var failures = 0;
 foreach (var (name, run) in checks)
@@ -32,6 +35,49 @@ foreach (var (name, run) in checks)
 }
 Console.WriteLine($"{checks.Length - failures}/{checks.Length} checks passed.");
 return failures == 0 ? 0 : 1;
+
+static void CheckCancelledBeforeEdit()
+{
+    using var cancellation = new CancellationTokenSource();
+    cancellation.Cancel();
+    var changed = false;
+    var restored = false;
+    Throws<OperationCanceledException>(() => CancellableLegendEdit.Run(
+        () => changed = true, () => restored = true, cancellation.Token), "pre-canceled edit");
+    Assert(!changed && !restored, "neither mutation nor unnecessary restoration may run");
+}
+
+static void CheckCancelledDuringEdit()
+{
+    using var cancellation = new CancellationTokenSource();
+    var width = 10;
+    CancellableLegendEdit.Run(() => width = 12, () => width = 10, cancellation.Token);
+    Equal(12, width, "successful edit remains");
+    Throws<OperationCanceledException>(() => CancellableLegendEdit.Run(
+        () => { width = 15; cancellation.Cancel(); }, () => width = 12, cancellation.Token), "cancel in edit");
+    Equal(12, width, "unfinished edit restored");
+}
+
+static void CheckEditRestoration()
+{
+    var width = 10;
+    Throws<ArgumentException>(() => CancellableLegendEdit.Run(
+        () => { width = 20; throw new ArgumentException("change failed"); },
+        () => width = 10, CancellationToken.None), "failed change");
+    Equal(10, width, "failure restores original");
+    try
+    {
+        CancellableLegendEdit.Run(() => throw new ArgumentException("change failed"),
+            () => throw new ApplicationException("restore failed"), CancellationToken.None);
+        throw new Exception("Expected restoration error");
+    }
+    catch (InvalidOperationException ex)
+    {
+        Assert(ex.InnerException is AggregateException aggregate && aggregate.InnerExceptions.Count == 2,
+            "both errors preserved");
+        Assert(ex.Message.Contains("Undo"), "actionable restoration failure");
+    }
+}
 
 static void CheckClone()
 {

@@ -2,7 +2,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="clr-namespace:ArcGIS.Desktop.Framework.Controls;assembly=ArcGIS.Desktop.Framework"
-    Title="Scale legend" Width="490" SizeToContent="Height"
+    Title="Scale legend" Width="510" SizeToContent="Height"
     ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
     Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
     Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}">
@@ -14,28 +14,36 @@
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <StackPanel>
-      <TextBlock Text="Scale a live legend" FontSize="20" FontWeight="SemiBold"/>
+      <TextBlock Text="Resize a legend" FontSize="20" FontWeight="SemiBold"/>
+      <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
+                 Text="Resize the selected legend's text, spacing, symbol patches, and frame together."/>
       <TextBlock x:Name="SelectionText" Margin="0,8,0,0" TextWrapping="Wrap"/>
     </StackPanel>
     <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,22,0,0">
       <Label Content="Scale (%)" Target="{Binding ElementName=PercentBox}" VerticalAlignment="Center" Padding="0,0,14,0"/>
       <TextBox x:Name="PercentBox" Text="125" Width="96" Padding="8,5" TextChanged="PercentChanged"
                AutomationProperties.Name="Scale percentage"/>
-      <TextBlock Text="10 to 1,000" Margin="12,0,0,0" VerticalAlignment="Center"/>
+      <TextBlock Text="125% makes it 25% larger" Margin="12,0,0,0" VerticalAlignment="Center"/>
     </StackPanel>
     <TextBlock Grid.Row="2" x:Name="DimensionsText" Margin="0,10,0,0" TextWrapping="Wrap"/>
     <TextBlock Grid.Row="3" Margin="0,18,0,0" TextWrapping="Wrap"
-               Text="Scales fonts, symbol patches, spacing, and the frame. The legend stays linked to its map. Use a scaled copy to inspect the result beside the original."/>
-    <ScrollViewer Grid.Row="4" Margin="0,12,0,0" MaxHeight="170" VerticalScrollBarVisibility="Auto">
-      <TextBlock x:Name="ScopeText" TextWrapping="Wrap"
-                 Text="Scales configured font sizes and uses fixed fonts; previously fitted text and columns may change. Map-symbol sizes and complex effects may need manual adjustment. Copies may extend outside the page. Use layout Undo to revert."/>
-    </ScrollViewer>
-    <TextBlock Grid.Row="5" x:Name="ErrorText" Margin="0,12,0,0" TextWrapping="Wrap" Foreground="Firebrick"
-               AutomationProperties.LiveSetting="Assertive"/>
+               Text="Create scaled copy keeps the original and places a live copy beside it. Scale original changes the selected legend. Use layout Undo to reverse either action."/>
+    <Expander Grid.Row="4" Header="What to check in the result" Margin="0,12,0,0">
+      <ScrollViewer MaxHeight="170" VerticalScrollBarVisibility="Auto">
+        <TextBlock x:Name="ScopeText" Margin="0,6,0,0" TextWrapping="Wrap"
+                   Text="The legend stays linked to its map. Map-symbol sizes and complex effects may need adjustment. Fixed font sizes may change column wrapping. Copies may extend outside the page."/>
+      </ScrollViewer>
+    </Expander>
+    <StackPanel Grid.Row="5" Margin="0,12,0,0">
+      <TextBlock Text="Close or Esc exits this window." TextWrapping="Wrap"/>
+      <TextBlock x:Name="StatusText" Margin="0,6,0,0" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock x:Name="ErrorText" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="Firebrick"
+                 AutomationProperties.LiveSetting="Assertive"/>
+    </StackPanel>
     <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
       <Button x:Name="CopyButton" Content="Create scaled copy" Padding="12,7" Margin="0,0,8,0" Click="CopyClick" IsDefault="True"/>
       <Button x:Name="ApplyButton" Content="Scale original" Padding="12,7" Margin="0,0,8,0" Click="ApplyClick"/>
-      <Button x:Name="CloseButton" Content="Close" Padding="12,7" IsCancel="True"/>
+      <Button x:Name="CloseButton" Content="Close" Padding="12,7" IsCancel="True" Click="CloseClick"/>
     </StackPanel>
   </Grid>
 </controls:ProWindow>
