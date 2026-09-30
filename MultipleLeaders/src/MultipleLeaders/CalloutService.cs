@@ -30,6 +30,13 @@ internal sealed record EditableCalloutSnapshot(
     public required IReadOnlyList<long> ObjectIds { get; init; }
 }
 
+internal sealed record CalloutListItem(EditableCalloutSnapshot? Snapshot, string Text,
+    string Source, int PointCount, string GraphicsLayer, string Status, bool IsSelected, bool SourceAvailable)
+{
+    public bool CanEdit => Snapshot is not null;
+    public bool CanReconnect => CanEdit && SourceAvailable;
+}
+
 /// <summary>All methods run on Pro's main worker thread through QueuedTask.Run.</summary>
 internal static class CalloutService
 {
@@ -56,8 +63,11 @@ internal static class CalloutService
             .Select(field => field.Name)
             .Order(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var snapshot = new SelectionSnapshot(map, layer, layer.URI, layer.Name, ids,
-            ReadAnchors(featureClass, ids, map.SpatialReference, cancellationToken), fields)
+        var anchors = ReadAnchors(featureClass, ids, map.SpatialReference, cancellationToken);
+        if (anchors.Select(point => (point.X, point.Y)).Distinct().Take(2).Count() < 2)
+            throw new InvalidOperationException("The selected features occupy one point location. Select points at two or more distinct locations before creating a shared label.");
+        EnsureTargetVisible(FindTargetLayer(map));
+        var snapshot = new SelectionSnapshot(map, layer, layer.URI, layer.Name, ids, anchors, fields)
         {
             SourceIdentity = GetSourceIdentity(layer)
         };
@@ -107,10 +117,10 @@ internal static class CalloutService
             Property("CreatedUtc", DateTimeOffset.UtcNow.ToString("O"))
         };
 
-        GraphicsLayer? target = map.GetLayersAsFlattenedList().OfType<GraphicsLayer>()
-            .FirstOrDefault(layer => layer.Name == LayerName &&
-                (layer.GetElements().Count == 0 || layer.GetElementsAsFlattenedList()
-                    .Any(element => element.GetCustomProperty(Prefix + "Version") == SchemaVersion)));
+        // Graphics created in map coordinates need a layer in the current map CRS.
+        // A previously created layer can retain its old CRS after the map changes.
+        GraphicsLayer? target = FindTargetLayer(map);
+        EnsureTargetVisible(target);
         GraphicElement? element = null;
         var addedLayer = false;
         cancellationToken.ThrowIfCancellationRequested();
@@ -125,8 +135,7 @@ internal static class CalloutService
                         new GraphicsLayerCreationParams { Name = LayerName, IsVisible = true }, map);
                     addedLayer = true;
                 }
-                else if (!target.IsVisible)
-                    throw new InvalidOperationException("Make the Multiple Leaders graphics layer visible before creating another label.");
+                EnsureTargetVisible(target);
 
                 cancellationToken.ThrowIfCancellationRequested();
                 element = ElementFactory.Instance.CreateGraphicElement(target, graphic, name, true);
@@ -156,9 +165,29 @@ internal static class CalloutService
         return element!.Name;
     }
 
+    private static GraphicsLayer? FindTargetLayer(Map map) =>
+        map.GetLayersAsFlattenedList().OfType<GraphicsLayer>().FirstOrDefault(layer =>
+            layer.Name == LayerName && layer.GetSpatialReference() is { IsUnknown: false } reference &&
+            reference.IsEqual(map.SpatialReference) &&
+            (layer.GetElements().Count == 0 || layer.GetElementsAsFlattenedList()
+                .Any(element => element.GetCustomProperty(Prefix + "Version") == SchemaVersion)));
+
+    private static void EnsureTargetVisible(GraphicsLayer? layer)
+    {
+        if (layer is { IsVisible: false })
+            throw new InvalidOperationException("Make the Multiple Leaders graphics layer visible in Contents before creating another label.");
+    }
+
     public static string RefreshSelected(MapView view, CancellationToken cancellationToken = default)
     {
         var snapshot = CaptureSelected(view, cancellationToken);
+        return Refresh(view, snapshot, cancellationToken);
+    }
+
+    public static string Refresh(MapView view, EditableCalloutSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateSnapshot(view, snapshot, cancellationToken);
         var before = GetEditableGraphic(snapshot.Element);
         var position = ResolveGraphicPosition(snapshot, before);
         var anchors = ReadCurrentAnchors(snapshot, position.SpatialReference, cancellationToken);
@@ -184,6 +213,70 @@ internal static class CalloutService
         if (selected[0].Element is not GraphicElement element ||
             element.GetCustomProperty(Prefix + "Version") != SchemaVersion)
             throw new InvalidOperationException("The selected graphic is not a linked Multiple Leaders label. Use Graphics > Select to select a label created by this add-in.");
+        return CaptureElement(map, selected[0].Layer, element, cancellationToken);
+    }
+
+    // Selection ambiguity opens the label list. Invalid map/view state still raises
+    // its normal error rather than hiding that error behind an empty picker.
+    public static EditableCalloutSnapshot? TryCaptureSelected(MapView view,
+        CancellationToken cancellationToken = default)
+    {
+        var map = ValidateView(view);
+        cancellationToken.ThrowIfCancellationRequested();
+        var selected = map.GetLayersAsFlattenedList().OfType<GraphicsLayer>()
+            .SelectMany(layer => layer.GetSelectedElements().Select(element => (Layer: layer, Element: element)))
+            .ToArray();
+        if (selected.Length != 1 || selected[0].Element is not GraphicElement element ||
+            element.GetCustomProperty(Prefix + "Version") != SchemaVersion) return null;
+        try { return CaptureElement(map, selected[0].Layer, element, cancellationToken); }
+        catch (InvalidOperationException) { return null; }
+    }
+
+    public static IReadOnlyList<CalloutListItem> ListLabels(MapView view,
+        CancellationToken cancellationToken = default)
+    {
+        var map = ValidateView(view);
+        var result = new List<CalloutListItem>();
+        var sources = map.GetLayersAsFlattenedList().OfType<FeatureLayer>().ToArray();
+        foreach (var layer in map.GetLayersAsFlattenedList().OfType<GraphicsLayer>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var selected = layer.GetSelectedElements();
+            foreach (var element in layer.GetElementsAsFlattenedList().OfType<GraphicElement>())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var version = element.GetCustomProperty(Prefix + "Version");
+                if (string.IsNullOrEmpty(version)) continue;
+                var text = element.GetGraphic() is CIMTextGraphic graphic
+                    ? System.Net.WebUtility.HtmlDecode(graphic.Text ?? string.Empty)
+                        .Replace('\r', ' ').Replace('\n', ' ').Trim()
+                    : "Unsupported graphic";
+                if (string.IsNullOrWhiteSpace(text)) text = "(Empty label)";
+                var uri = element.GetCustomProperty(Prefix + "SourceLayerUri");
+                var source = sources.FirstOrDefault(candidate => candidate.URI == uri);
+                var sourceName = source?.Name ?? element.GetCustomProperty(Prefix + "SourceLayerName") ?? "Unknown source";
+                EditableCalloutSnapshot? snapshot = null;
+                var status = source is null ? "Source layer missing; resizing remains available." : "Ready";
+                try
+                {
+                    if (version != SchemaVersion)
+                        throw new InvalidOperationException("This label uses an unsupported metadata version.");
+                    snapshot = CaptureElement(map, layer, element, cancellationToken);
+                    if (!layer.IsVisible) status += " Graphics layer is hidden; turn it on in Contents to view edits.";
+                }
+                catch (InvalidOperationException error) { status = error.Message; }
+                result.Add(new(snapshot, text, sourceName, snapshot?.ObjectIds.Count ?? 0,
+                    layer.Name, status, selected.Contains(element), source is not null));
+            }
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return result.OrderBy(item => item.Text, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(item => item.Source, StringComparer.CurrentCultureIgnoreCase).ToArray();
+    }
+
+    private static EditableCalloutSnapshot CaptureElement(Map map, GraphicsLayer layer,
+        GraphicElement element, CancellationToken cancellationToken)
+    {
         ValidateEditableElement(element);
         var graphic = GetEditableGraphic(element);
         var textSymbol = GetTextSymbol(graphic);
@@ -193,12 +286,24 @@ internal static class CalloutService
         if (string.IsNullOrWhiteSpace(sourceUri) || string.IsNullOrWhiteSpace(sourceIdentity))
             throw new InvalidOperationException("This label is missing its source-link metadata. Create a new shared label from the intended source points.");
         cancellationToken.ThrowIfCancellationRequested();
-        return new(map, selected[0].Layer, element, element.Name, textSymbol.Height)
+        return new(map, layer, element, element.Name, textSymbol.Height)
         {
             SourceLayerUri = sourceUri,
             SourceIdentity = sourceIdentity,
             ObjectIds = ids
         };
+    }
+
+    public static void ValidateMove(MapView view, EditableCalloutSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateSnapshot(view, snapshot, cancellationToken);
+        var reference = snapshot.Layer.GetSpatialReference();
+        if (reference is null || reference.IsUnknown || !reference.IsEqual(snapshot.Map.SpatialReference))
+            throw new InvalidOperationException("Move Label currently requires the map and graphics layer to use the same coordinate system. Restore the map coordinate system used when this graphics layer was created, then try again.");
+        // Fail before activating the click tool when the saved source link is already
+        // broken. Move rechecks it again at commit time after the user's map click.
+        _ = ReadCurrentAnchors(snapshot, reference, cancellationToken);
     }
 
     public static string Resize(MapView view, EditableCalloutSnapshot snapshot, double fontSize,

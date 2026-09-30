@@ -1,4 +1,5 @@
 using ArcGIS.Core.CIM;
+using System.Globalization;
 using LegendScaler;
 
 // Synthetic CIM checks require ArcGIS.Core, but do not start Pro or load Framework.
@@ -22,6 +23,10 @@ var checks = new (string Name, Action Run)[]
     ("Cancellation before queued work prevents mutation", CheckCancelledBeforeEdit),
     ("Cancellation during edits restores the original state", CheckCancelledDuringEdit),
     ("Failed edits restore state and failed restoration is reported", CheckEditRestoration),
+    ("Common percentage entries produce the intended size", CheckPercentageInput),
+    ("Percentage input respects decimal culture and rejects ambiguous entries", CheckPercentageCulture),
+    ("Invalid percentages cannot become scaling operations", CheckInvalidPercentages),
+    ("Size feedback distinguishes enlargement, reduction and duplication", CheckPercentageFeedback),
 };
 var failures = 0;
 foreach (var (name, run) in checks)
@@ -35,6 +40,40 @@ foreach (var (name, run) in checks)
 }
 Console.WriteLine($"{checks.Length - failures}/{checks.Length} checks passed.");
 return failures == 0 ? 0 : 1;
+
+static void CheckPercentageInput()
+{
+    foreach (var (text, factor) in new[] { ("50", 0.5), ("75%", 0.75), (" 125 % ", 1.25), ("100", 1.0), ("200%", 2.0), ("10", 0.1), ("1000", 10.0) })
+    {
+        Assert(LegendScaleInput.TryParse(text, CultureInfo.InvariantCulture, out var input), $"accepted {text}");
+        Near(factor, input.Factor, $"factor for {text}");
+    }
+}
+
+static void CheckPercentageCulture()
+{
+    var german = CultureInfo.GetCultureInfo("de-DE");
+    Assert(LegendScaleInput.TryParse("125,5 %", german, out var input), "localized decimal accepted");
+    Near(1.255, input.Factor, "localized fraction retained");
+    Assert(!LegendScaleInput.TryParse("125,5", CultureInfo.GetCultureInfo("en-US"), out _), "comma must not be mistaken for a thousands separator");
+    Assert(!LegendScaleInput.TryParse("1.000", german, out _), "ambiguous thousands entry rejected");
+}
+
+static void CheckInvalidPercentages()
+{
+    foreach (var text in new string?[] { null, "", " ", "%", "125%%", "NaN", "Infinity", "0", "-50", "9.99", "1000.01", "abc" })
+        Assert(!LegendScaleInput.TryParse(text, CultureInfo.InvariantCulture, out _), $"rejected {text ?? "null"}");
+}
+
+static void CheckPercentageFeedback()
+{
+    var larger = new LegendScaleInput(125);
+    Assert(larger.DescribeChange(CultureInfo.InvariantCulture).Contains("25% larger"), "125% means 25% larger");
+    var smaller = new LegendScaleInput(75);
+    Assert(smaller.DescribeChange(CultureInfo.InvariantCulture).Contains("25% smaller"), "75% means 25% smaller");
+    var same = new LegendScaleInput(100);
+    Assert(!same.ChangesSize && same.DescribeChange(CultureInfo.InvariantCulture).Contains("copy"), "100% guides duplication rather than a no-op original edit");
+}
 
 static void CheckCancelledBeforeEdit()
 {

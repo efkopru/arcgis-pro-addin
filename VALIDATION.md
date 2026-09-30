@@ -2,14 +2,38 @@
 
 Date: September 29, 2026. Local runtime: ArcGIS Pro 3.7.2, .NET SDK 10.0.204.
 
-Legend Scaler is version **0.1.2**. Multiple Leaders is version **0.1.4**. Each add-in has its own source, build script, checks, and generated installer folder.
+Current packages are Legend Scaler **0.1.3** and Multiple Leaders **0.1.5**. Each add-in has its own source, build script, checks, and generated installer folder. Native results below remain attributed to the versions actually tested.
 
 ## Automated checks
 
 - Both Release builds compile with zero warnings and zero errors.
-- Legend Scaler: **17 checks** pass, including the production cancellation/restore wrapper with simulated mutations.
-- Multiple Leaders: **21 checks** pass, including single-placement lifetime, cancellation before queued work, deferred tool exit, reentrant cancellation, stale requests, other-tool selection, and recovery after a failed transition.
+- Legend Scaler: **21 checks** pass, including the production cancellation/restore wrapper with simulated mutations and localized percentage input/change descriptions.
+- Multiple Leaders: **27 checks** pass, including single-placement lifetime, cancellation before queued work, deferred tool exit, reentrant cancellation, stale requests, other-tool selection, recovery after a failed transition, localized size input, and shared text validation before placement.
 - Both DAML files pass the installed Pro schema. Packages contain their own add-in binaries and Config.daml, without redistributed Esri assemblies.
+
+Current package manifests and DLL versions were checked after packaging. Both archives contain four intended entries, and their DLL hashes match the final Release build outputs. Previous installers are retained in each add-in's ignored `artifacts/archive/` folder.
+
+- Legend Scaler 0.1.3 package SHA-256: `472E1BE3A830F7ACC7FE7B17D26488C8ED1A14E92FA0E492301B7DDCA7BACCE9`.
+- Multiple Leaders 0.1.5 package SHA-256: `021D09C1C86378584F581A10CD346A7D2336DD4E6330C3F4CBFE4E42B4E3FBB3`.
+
+## Usability revision: Legend Scaler 0.1.3 and Multiple Leaders 0.1.5
+
+Legend Scaler adds common percentage presets, localized percentage input with an optional percent sign, live larger/smaller feedback, frame dimensions in layout units, an explicit copy/original choice, and persistent completion or overflow notifications. Close remains accessible while the content scrolls or an edit is queued.
+
+Multiple Leaders adds a label browser showing text, source layer, feature count, and graphics layer. It supports movement, resizing, and reconnection without first selecting a graphic. Direct ribbon commands use a single editable selection or open the browser. The creation and resize dialogs add style samples and size presets; creation remembers accepted sizes for the Pro session. Invalid text, coincident-only source selections, and hidden target graphics layers fail earlier. New labels use a target layer matching the map coordinate system so the current Move restriction does not immediately prevent editing a newly created label.
+
+Code review checked captured-element identity, stale source metadata, child versus parent cancellation during a manager-to-Move handoff, and reporting of unexpected recovery errors after closing a dialog. This is source review, not proof of native rollback.
+
+The creation, resize, manager, and legend XAML layouts were rendered as detached WPF content with synthetic values. The rendered layouts were inspected; the creation and legend dialogs were also checked at reduced heights with their action/close footers visible. These checks establish basic layout behavior, not Pro theme integration or SDK event behavior. The mock renders remain in ignored `.tools/ui-preview/`.
+
+No new native tests or add-in installation were performed for these revisions. Before extending the native verification claims, test:
+
+- Manage Labels with no selection, several labels, a selected valid label alongside locked/grouped entries, missing sources, hidden layers, and long text; verify the intended row is edited.
+- Resize and reconnect repeatedly inside the manager; close during queued work; confirm expected cancellation is quiet and unexpected restoration failures remain visible.
+- Move from the manager, cancel with Escape, then move again; verify endpoints and single-step Undo/Redo remain correct.
+- Create after changing the map coordinate system; verify the new target layer and Move workflow, while preserving older graphics.
+- Style presets, shared-field loading, manually edited field text, and comma-decimal input; verify previews are labeled as samples and the produced CIM sizes match the inputs.
+- Legend presets, copy/original choice, real layout units, completion/overflow notices, and Close/Escape during edits; retest copy creation and Undo/Redo.
 
 ## Native setup
 

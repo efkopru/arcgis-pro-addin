@@ -3,7 +3,8 @@ using ArcGIS.Desktop.Layouts;
 
 namespace LegendScaler;
 
-internal sealed record LegendTarget(Legend Element, string Name, double Width, double Height, int ItemCount, IReadOnlyList<string> Warnings);
+internal sealed record LegendTarget(Legend Element, string Name, double Width, double Height, int ItemCount,
+    string UnitName, IReadOnlyList<string> Warnings);
 internal sealed record ScaleResult(string Name, bool FitsFrame, bool IsCopy);
 
 /// <summary>All calls run on Pro's main worker thread through QueuedTask.Run.</summary>
@@ -11,21 +12,27 @@ internal static class LegendScaleService
 {
     public static LegendTarget Inspect(LayoutView view)
     {
+        ValidateView(view);
         var selected = view.GetSelectedElements();
-        if (selected.Count != 1 || selected[0] is not Legend legend)
-            throw new InvalidOperationException("Select exactly one legend in the layout Contents pane.");
+        if (selected.Count == 0)
+            throw new InvalidOperationException("No legend is selected. In the layout Contents pane, click a legend, then open Legend Tools > Resize Legend again.");
+        if (selected.Count != 1)
+            throw new InvalidOperationException($"{selected.Count} elements are selected. In the layout Contents pane, click just one legend, then open Resize Legend again.");
+        if (selected[0] is not Legend legend)
+            throw new InvalidOperationException("The selected element is not a legend. In the layout Contents pane, select the legend itself, then open Resize Legend again.");
 
         Validate(legend);
         var definition = (CIMLegend)legend.GetDefinition();
         UseFixedFontSizes(definition);
         return new(legend, legend.Name, legend.GetWidth(), legend.GetHeight(), definition.Items?.Length ?? 0,
-            LegendScaling.GetWarnings(definition));
+            view.Layout.GetPage().Units.ToString().ToLowerInvariant(), LegendScaling.GetWarnings(definition));
     }
 
     public static ScaleResult Apply(LayoutView view, LegendTarget target, double factor, bool createCopy,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ValidateView(view);
         var layout = view.Layout;
         if (!layout.GetElementsAsFlattenedList().Contains(target.Element))
             throw new InvalidOperationException("The selected legend is no longer in this layout. Close this window and select it again.");
@@ -124,5 +131,11 @@ internal static class LegendScaleService
         if (!double.IsFinite(legend.GetWidth()) || !double.IsFinite(legend.GetHeight()) ||
             legend.GetWidth() <= 0 || legend.GetHeight() <= 0)
             throw new InvalidOperationException("The legend must have a positive width and height.");
+    }
+
+    private static void ValidateView(LayoutView view)
+    {
+        if (view != LayoutView.Active)
+            throw new InvalidOperationException("The active layout changed. Return to the intended layout, select its legend, and open Resize Legend again.");
     }
 }

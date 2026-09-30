@@ -1,6 +1,7 @@
 using ArcGIS.Core.CIM;
 using ArcGIS.Core.Geometry;
 using MultipleLeaders;
+using System.Globalization;
 using System.Text.Json;
 
 // Geometry creation/XY access work without hosting. Native geometry serialization,
@@ -15,6 +16,12 @@ var checks = new (string Name, Action Run)[]
     ("Anchor counts enforce two distinct locations and a maximum of 100", CheckCounts),
     ("Label text is trimmed and treated literally", CheckLiteralText),
     ("Missing and invalid text is rejected", CheckInvalidText),
+    ("Dialog accepts localized decimal sizes without changing their values", CheckLocalizedInput),
+    ("Dialog rejects foreign decimal separators and grouped numbers", CheckNumericSeparators),
+    ("Dialog rejects nonfinite and incomplete numeric input", CheckNonfiniteInput),
+    ("Dialog accepts the text and size boundaries", CheckInputBoundaries),
+    ("Dialog rejects forbidden text before placement with the builder's validation", CheckTextPrevalidation),
+    ("Text normalization preserves literal text until CIM construction", CheckLiteralNormalization),
     ("Nonfinite and out-of-range sizes are rejected", CheckInvalidSizes),
     ("Missing, empty and nonfinite point locations are rejected", CheckInvalidPoints),
     ("Boundary sizes and the maximum anchor count are accepted", CheckBoundaries),
@@ -314,6 +321,99 @@ static void CheckInvalidText()
     Throws<ArgumentNullException>(() => CalloutGraphicBuilder.Create(null!, Label(), Anchors(), 12, 1), "null text");
     foreach (var text in new[] { "", " \t\n ", new string('x', 501), "bad\0text" })
         Throws<ArgumentException>(() => CalloutGraphicBuilder.Create(text, Label(), Anchors(), 12, 1), "invalid text");
+}
+
+static void CheckLocalizedInput()
+{
+    foreach (var cultureName in new[] { "en-US", "de-DE", "fr-FR", "tr-TR" })
+    {
+        var culture = CultureInfo.GetCultureInfo(cultureName);
+        Assert(CalloutInput.TryRead("Shared label", 12.5.ToString(culture), 0.75.ToString(culture), culture,
+            out var font, out var width, out var error), $"localized input {cultureName}: {error}");
+        Near(12.5, font, $"localized font {cultureName}");
+        Near(0.75, width, $"localized width {cultureName}");
+        Equal("", error, $"valid input clears error {cultureName}");
+    }
+}
+
+static void CheckNumericSeparators()
+{
+    foreach (var (cultureName, input) in new[]
+    {
+        ("en-US", "0,75"), ("en-US", "1,250"), ("en-US", "12,5"),
+        ("de-DE", "0.75"), ("de-DE", "1.250"), ("de-DE", "12.5"),
+        ("fr-FR", "1\u202f250"), ("fr-FR", "1 250")
+    })
+    {
+        // A broad accepted range ensures failure is caused by syntax, not by a
+        // grouped integer accidentally becoming too large for the font limits.
+        Assert(!CalloutInput.TryNumber(input, 0, 50_000, CultureInfo.GetCultureInfo(cultureName), out _),
+            $"do not reinterpret separators: {cultureName} {input}");
+    }
+}
+
+static void CheckNonfiniteInput()
+{
+    foreach (var cultureName in new[] { "en-US", "de-DE" })
+    {
+        var culture = CultureInfo.GetCultureInfo(cultureName);
+        foreach (var input in new[] { "", " ", "-", "1e", "1e9999", "NaN",
+                     double.PositiveInfinity.ToString(culture), double.NegativeInfinity.ToString(culture) })
+        {
+            Assert(!CalloutInput.TryRead("Label", input, 1d.ToString(culture), culture,
+                out _, out _, out var fontError) && fontError.Length > 0, $"invalid font {cultureName}: {input}");
+            Assert(!CalloutInput.TryRead("Label", "12", input, culture,
+                out _, out _, out var widthError) && widthError.Length > 0, $"invalid width {cultureName}: {input}");
+        }
+    }
+}
+
+static void CheckInputBoundaries()
+{
+    foreach (var cultureName in new[] { "en-US", "de-DE" })
+    {
+        var culture = CultureInfo.GetCultureInfo(cultureName);
+        foreach (var (fontValue, widthValue) in new[] { (6d, 0.1), (72d, 5d) })
+        {
+            Assert(CalloutInput.TryRead(new string('x', 500), fontValue.ToString(culture), widthValue.ToString(culture),
+                culture, out var font, out var width, out var error), $"accepted boundary {cultureName}: {error}");
+            Near(fontValue, font, "boundary font");
+            Near(widthValue, width, "boundary width");
+        }
+        foreach (var font in new[] { 5.999, 72.001 })
+            Assert(!CalloutInput.TryRead("Label", font.ToString(culture), "1", culture, out _, out _, out _),
+                "reject font just outside bounds");
+        foreach (var width in new[] { 0.099, 5.001 })
+            Assert(!CalloutInput.TryRead("Label", "12", width.ToString(culture), culture, out _, out _, out _),
+                "reject width just outside bounds");
+    }
+}
+
+static void CheckTextPrevalidation()
+{
+    foreach (var text in new[] { "", " \t\r\n ", new string('x', 501), "bad\0text", "bad\u000btext",
+                 "\u000bLabel", "Label\u000c", "bad\u007ftext" })
+    {
+        Assert(!CalloutInput.TryRead(text, "12", "1", CultureInfo.InvariantCulture,
+            out _, out _, out var dialogError), "invalid text cannot start placement");
+        Assert(!CalloutGraphicBuilder.TryNormalizeText(text, out _, out var builderError), "builder rejects same text");
+        Equal(builderError, dialogError, "dialog and builder explain the same text failure");
+        Throws<ArgumentException>(() => CalloutGraphicBuilder.Create(text, Label(), Anchors(), 12, 1),
+            "creation rechecks text before geometry mutation");
+    }
+}
+
+static void CheckLiteralNormalization()
+{
+    const string input = " \tA&B <FNT>C</FNT> &amp;\r\nnext\tcolumn \r\n";
+    const string literal = "A&B <FNT>C</FNT> &amp;\r\nnext\tcolumn";
+    const string escaped = "A&amp;B &lt;FNT&gt;C&lt;/FNT&gt; &amp;amp;\r\nnext\tcolumn";
+    Assert(CalloutInput.TryRead(input, "12", "1", CultureInfo.InvariantCulture, out _, out _, out _),
+        "literal text and ordinary line/tab separators are valid");
+    Equal(literal, CalloutGraphicBuilder.NormalizeText(input), "normalization does not escape literal input");
+    Equal(literal, CalloutGraphicBuilder.NormalizeText(literal), "normalization is idempotent");
+    Equal(escaped, CalloutGraphicBuilder.Create(literal, Label(), Anchors(), 12, 1).Text,
+        "CIM construction escapes once after normalization");
 }
 
 static void CheckInvalidSizes()
