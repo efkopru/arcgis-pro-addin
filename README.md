@@ -9,7 +9,9 @@ Two independent C# / .NET add-ins for **ArcGIS Pro 3.7**, each contained in its 
 
 **Legend Tools** is the ribbon tab for Legend Scaler. Open a layout, select its legend, and choose a percentage. For example, 125% enlarges supported text, spacing, symbol patches, and frame dimensions by 25%. Apply it to the original legend or create a scaled copy. It does not change map zoom or feature labels; some symbol sizes remain controlled by the source renderer.
 
-**Multiple Leaders** works in a map. After creating a shared label, use **Graphics > Select** to select the text. **Move Label** places it at your next click, **Resize Label** changes its font size, and **Reconnect Leaders** updates endpoints after the source points move.
+**Multiple Leaders** works in a map. **Create Shared Label** offers text and line previews, common sizes, and remembered style choices during the Pro session. Open **Manage Labels** to choose an existing label by its text and source layer, without first selecting a graphic. **Move Label** places it at your next click, **Resize Label** changes its font size, and **Reconnect Leaders** updates endpoints after source points move. The direct ribbon commands also open the label browser when no single editable label is selected.
+
+Current packages: **Legend Scaler 0.1.3** and **Multiple Leaders 0.1.5**. Legend Scaler now has percentage presets, a live larger/smaller explanation, a frame preview in layout units, and an explicit copy/original choice. These usability revisions pass local build and standalone checks; the [validation record](VALIDATION.md) identifies the earlier versions used for native tests and the new workflows still awaiting them.
 
 ## Project layout
 

@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="..\..\src\LegendScaler\LegendScaling.cs" Link="LegendScaling.cs" />
     <Compile Include="..\..\src\LegendScaler\CancellableLegendEdit.cs" Link="CancellableLegendEdit.cs" />
+    <Compile Include="..\..\src\LegendScaler\LegendScaleInput.cs" Link="LegendScaleInput.cs" />
     <Reference Include="ArcGIS.Core">
       <HintPath>$(ArcGISProInstallDir)\bin\ArcGIS.Core.dll</HintPath>
       <Private>true</Private>

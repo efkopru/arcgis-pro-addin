@@ -6,9 +6,9 @@ Run from the `LegendScaler` folder with ArcGIS Pro 3.7 and .NET 10 installed:
 dotnet run --project tests/LegendScaler.Checks/LegendScaler.Checks.csproj --configuration Release
 ```
 
-The console harness links the production `LegendScaling.cs` and `CancellableLegendEdit.cs` and references the locally installed `ArcGIS.Core.dll`. It uses no test packages, no `ArcGIS.Desktop.*` assemblies, no Pro UI, and no license initialization. A failed check returns a nonzero exit code. Override `ArcGISProInstallDir` through MSBuild if Pro is installed in a different directory.
+The console harness links the production `LegendScaling.cs`, `LegendScaleInput.cs`, and `CancellableLegendEdit.cs` and references the locally installed `ArcGIS.Core.dll`. It uses no test packages, no `ArcGIS.Desktop.*` assemblies, no Pro UI, and no license initialization. A failed check returns a nonzero exit code. Override `ArcGISProInstallDir` through MSBuild if Pro is installed in a different directory.
 
-The 17 checks include cancellation before mutation, restoration after cancellation during a simulated edit, restoration after an edit failure, and reporting both errors when restoration also fails. These do not establish native layout restoration or dialog keyboard behavior.
+The 21 checks include percentage parsing with optional `%`, localized decimal input, rejection of ambiguous and invalid entries, relative-size feedback, cancellation before mutation, restoration after cancellation during a simulated edit, restoration after an edit failure, and reporting both errors when restoration also fails. These do not establish native layout restoration, dialog controls, notifications, or keyboard behavior.
 
 The checks cover immutable source definitions, deep-clone independence, mixed text sizes, default and item dimensions, zero and inherited dimensions, signed offsets, percentage properties, point versus multiplier line spacing, frame stroke/dash scaling, preserved layer and layout behavior, factor validation, repeated/inverse scaling, and limitation warnings.
 

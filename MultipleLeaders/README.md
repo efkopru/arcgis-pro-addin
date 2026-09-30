@@ -1,6 +1,6 @@
 # Multiple Leaders
 
-An independent C# / .NET add-in for **ArcGIS Pro 3.7**. Select point features, place one text graphic, and connect that text to each distinct point location with native leader lines. Current package: **0.1.4**.
+An independent C# / .NET add-in for **ArcGIS Pro 3.7**. Select point features, place one text graphic, and connect that text to each distinct point location with native leader lines. Current version: **0.1.5**.
 
 Everything for this add-in is under `MultipleLeaders/`. It has its own solution, source, checks, build script, and installer, and does not depend on Legend Scaler.
 
@@ -9,9 +9,9 @@ Everything for this add-in is under `MultipleLeaders/`. It has its own solution,
 1. Run `./build.ps1` from this folder to create `artifacts/MultipleLeaders.esriAddinX`. Close ArcGIS Pro and double-click that package. The package is unsigned; organization add-in settings may restrict its installation.
 2. Reopen Pro and activate a **2D map** with a known coordinate system.
 3. Select **2–100 point features in exactly one feature layer**. Clear selections in other layers. At least two distinct point locations are required.
-4. Open **Multiple Leaders > Create Shared Label**. The dialog illustrates how several points connect to one label.
+4. Open **Multiple Leaders > Create Shared Label**. The dialog previews the text size and leader width; size presets provide starting points.
 5. Enter the shared text, or select a string field and click **Use shared value**. The field must have the same nonblank value for every selected feature.
-6. Set the font size and leader width, then click **Next: place on map**. Click once at the desired label position. A cursor tip explains placement and Escape.
+6. Set the font size and leader width, then click **2. Place on map**. Click once at the desired label position. A cursor tip explains placement and Escape. The dialog remembers the last accepted sizes for this Pro session; its preview is illustrative, not the map's final rendering.
 
 The add-in creates one text graphic in a graphics layer named **Multiple Leaders**. The tool returns to Explore after one placement. The source features and their attributes are not changed. Repeated coincident points produce one visible leader for that location.
 
@@ -19,17 +19,21 @@ The add-in creates one text graphic in a graphics layer named **Multiple Leaders
 
 **Hide the result:** clear the **Multiple Leaders** layer's visibility checkbox in Contents. Use **Undo** to reverse creation. These controls do not turn automatic labeling on or off; this add-in creates manually placed graphics.
 
-Version **0.1.4** adds **Move Label**, **Resize Label**, clearer graphic-selection errors, and completion feedback for **Reconnect Leaders**. It retains the placement-exit fixes verified in 0.1.3.
+Version **0.1.5** adds **Manage Labels**, direct-command fallback to its label list, style previews and presets, and early checks for coincident source locations and hidden target layers. Native testing of these new workflows remains pending.
 
 Close **all** Pro instances when updating, including another project window. A stale cache previously retained an older DLL despite updated ribbon configuration. Native tests verify the extracted DLL against the package, not only the ribbon captions. See the [validation record](../VALIDATION.md).
 
 ## Refresh and editing
 
-First select the **Multiple Leaders** graphics layer in Contents, choose **Graphics > Select**, and click the shared-label text. The editing commands require one selected label graphic.
+Open **Multiple Leaders > Manage Labels** and choose a row by its text, source layer, and point count. Use **Move label**, **Resize label**, or **Reconnect leaders** in that window. No graphics selection is required. The list includes hidden labels and explains unsupported or missing-source entries. A missing source layer disables movement and reconnection; resizing remains available when the graphic itself is editable.
+
+The ribbon's direct editing commands use one already selected editable graphic. If selection is missing, ambiguous, or unsupported, they open Manage Labels. **Graphics > Select** remains an optional way to select a label directly.
 
 - **Move Label:** click the new position on the map. The label moves and its leaders reconnect to the current positions of the original source features. Text and styling are preserved. Esc or Cancel Placement cancels the move.
-- **Resize Label:** enter a font size from **6 to 72 points**. This changes text size while preserving the label position, leader endpoints, and leader width.
-- **Reconnect Leaders:** use this after a source point has actually moved. It re-reads the original feature IDs, updates the endpoints, and shows a completion notification. Label position, displayed text, and styling stay unchanged. If the endpoints already match the source points, there is no visible change.
+- **Resize Label:** enter a font size from **6 to 72 points**, or choose a preset. The dialog previews the size change and disables applying an unchanged size. Label position, leader endpoints, and leader width are preserved.
+- **Reconnect Leaders:** use this after a source point has actually moved. It re-reads the original feature IDs, updates the endpoints, and reports completion in the manager or a notification. Label position, displayed text, and styling stay unchanged. If the endpoints already match the source points, there is no visible change.
+
+Manage Labels stays open after resizing or reconnection. It reports progress and errors, disables overlapping actions, and keeps **Close**, **Esc**, and the title-bar X available. Closing cancels queued work; an edit that has already completed remains available through Undo. Move closes the manager before starting the next-click tool.
 
 Reconnection is explicit and does not refresh text copied from a field. Missing source features or a changed data connection cause refusal without dropping members. Create a new label to change source membership. Pro's native graphic formatting tools remain available for editing text and callout style.
 
@@ -46,6 +50,7 @@ The graphic stores the source layer URI, ObjectIDs, a hash of the data connectio
 - Projection of source points to the map coordinate system for creation, and to the existing graphic coordinate system for reconnection and movement.
 - Projection changes require the same underlying geographic coordinate system. Cross-GCS inputs are rejected; preproject those data using the intended datum transformation before creating labels.
 - Move Label additionally requires the map and graphics layer to use the same coordinate system. If the map CRS changed after creating the graphics layer, restore that CRS before moving its labels with this command.
+- New labels reuse a recognized graphics layer only when its known coordinate system matches the current map. Otherwise, a new Multiple Leaders graphics layer is created. Source geometry passed to the native creation API remains in map coordinates.
 - Rechecks source membership and data connection before changing a graphic.
 
 **This implements manually placed shared-label graphics.** It does not extend Maplex or provide automatic clustering, collision avoidance, scale-dependent regrouping, or feature-linked annotation. The original automatic-labeling request is broader than this first version.
@@ -66,7 +71,7 @@ From this folder:
 
 The build uses local Pro assemblies, validates the DAML against the installed schema, runs the standalone checks, and packages `artifacts/MultipleLeaders.esriAddinX`. It does not install the package. It excludes Esri runtime assemblies and preserves a prior installer until the new build and checks succeed.
 
-Verified locally against Pro 3.7.2: Release compilation with zero warnings/errors and **21 passing standalone checks**, including cancellation before a click, duplicate/concurrent clicks, delayed work, callback-safe tool switching, stale requests, reentrant cancellation, and failed transitions.
+The standalone harness checks graphic construction, creation input validation, literal text, and placement cancellation/scheduling. Native selection, manager actions, projection, rendering, and persistence require testing inside Pro. See the [validation record](../VALIDATION.md) for the current build and check results.
 
 Open `MultipleLeaders.slnx` in Visual Studio to develop both the add-in and its check harness.
 
@@ -93,6 +98,12 @@ Standalone checks inspect CIM text, leader types, endpoint coordinates, style va
 
 | Test | Expected behavior |
 | --- | --- |
+| Open Manage Labels with no graphics selected | Labels are listed by text, source, and member count; a row can be edited without Graphics > Select |
+| Run a direct edit command with no valid single selection | Manage Labels opens instead of a selection-only error |
+| Close or Esc while the manager is loading or waiting to edit | Window closes promptly; queued work is canceled; late callbacks do not update the closed window |
+| Resize/reconnect in the manager, then Move | Inline completion; current font size reloaded; Move closes the window and activates the existing single-click tool |
+| Select several features at one coincident location | Creation stops before the text dialog with a distinct-location explanation |
+| Create after changing map CRS, with an existing old-CRS graphics layer | A new matching-CRS graphics layer receives the new label |
 | Cancel, Esc, and title-bar X in the text dialog | Dialog closes, including during field lookup; no placement starts |
 | Esc before the first map click; Cancel Placement; switch to Explore | No graphic is created; placement stops |
 | Cancel while creation waits in the worker queue | Delayed creation does not add a graphic |
@@ -125,6 +136,7 @@ Replace the example path with your checkout location. The three selected Alpha p
 
 - `src/MultipleLeaders/CalloutGraphicBuilder.cs`: native text and leader construction, validation, and anchor replacement.
 - `src/MultipleLeaders/CalloutService.cs`: source selection, field lookup, coordinate projection, provenance, creation, reconnection, movement, and resizing.
+- `src/MultipleLeaders/CalloutManagerWindow.xaml`: label list, explicit edit targets, progress, and cancelable manager actions.
 - `src/MultipleLeaders/PlaceCalloutTool.cs`: map-click placement and movement.
 - `src/MultipleLeaders/CalloutOptionsWindow.xaml`: label and style options.
 - `tests/MultipleLeaders.Checks/`: standalone checks and their limits.

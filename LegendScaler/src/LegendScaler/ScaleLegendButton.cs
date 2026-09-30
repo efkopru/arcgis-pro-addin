@@ -28,6 +28,21 @@ internal sealed class ScaleLegendButton : Button
                 Owner = FrameworkApplication.Current.MainWindow
             };
             window.ShowDialog();
+            if (window.CompletedResult is { } result)
+            {
+                var details = result.IsCopy
+                    ? $"Created {result.Name} beside the original."
+                    : $"Resized {result.Name} to {window.AppliedPercent:0.##}% of its previous size.";
+                LegendNotifications.Show(new Notification(Notification.NotificationLevel.Project,
+                    result.FitsFrame ? NotificationType.Confirmation : NotificationType.Warning)
+                {
+                    Severity = result.FitsFrame ? Notification.SeverityLevel.Low : Notification.SeverityLevel.High,
+                    Title = result.FitsFrame ? (result.IsCopy ? "Legend copy created" : "Legend resized") : "Legend resized: check the frame",
+                    Message = details + (result.FitsFrame
+                        ? " Use layout Undo (Ctrl+Z) to reverse the change."
+                        : " The legend does not fit its frame. Enlarge the frame or use layout Undo (Ctrl+Z).")
+                });
+            }
         }
         catch (Exception ex)
         {

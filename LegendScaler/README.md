@@ -9,21 +9,23 @@ This add-in is self-contained under `LegendScaler/`, with its own solution, sour
 1. Build with `./build.ps1` from this directory, or use the existing `artifacts/LegendScaler.esriAddinX` package.
 2. Close ArcGIS Pro, double-click the package, and install it using Esri's add-in installer. The prototype is unsigned; organization add-in policy may prevent installation.
 3. Start Pro, open a project with a layout, and select exactly one legend in the layout Contents pane. Use an unlocked, unrotated legend outside a group.
-4. Open **Legend Tools > Resize Legend**. Enter a percentage, such as `125` for 25% larger or `50` for half size.
-5. Use **Create scaled copy** first. It places a separate live legend beside the source, which remains unchanged. The copy may extend outside the page.
-6. **Scale original** modifies the selected legend. Use the layout's native Undo command to revert the operation.
+4. Open **Legend Tools > Resize Legend**. Choose a preset or enter a percentage, such as `125` or `125%` for 25% larger. The dialog shows the size change and proposed frame width and height in the layout's units.
+5. Leave **A new copy (keep the original)** selected and click **Create scaled copy**. It places a separate live legend to the right of the source. The copy may extend outside the page.
+6. To change the source instead, choose **The selected legend** and click **Resize selected legend**. Use the layout's native Undo command to revert either action. A notification confirms completion and reports frame overflow.
 
 **Exit:** click **Close**, the title-bar close button, or press **Esc**. Closing also cancels queued work. If an edit has already finished, use layout **Undo** to reverse it. This is a one-time command; there is no scaling mode left running after the dialog closes. To hide a resulting legend, clear its visibility checkbox in the layout Contents pane.
 
-Version **0.1.2** fixes dialogs that disabled closing while work was queued. Close remains enabled, queued edits check cancellation, unfinished mutations attempt restoration, and closed windows ignore late completion callbacks. The dialog now explains the percentage, copy versus original, and Undo; technical caveats are in an expandable section.
+Version **0.1.3** adds percentage presets, live larger/smaller feedback, explicit copy/original options with one action button, layout units in the frame preview, clearer selection guidance, and completion notifications. Detected style notes are counted in the expandable section. The dialog defaults to 125% and a new copy each time.
+
+The cancellation safeguards introduced in **0.1.2** remain: Close stays enabled, queued edits check cancellation, unfinished mutations attempt restoration, and closed windows ignore late success callbacks. Expected cancellation stays quiet. Unexpected failures after closing, including failed restoration, produce a persistent error notification with recovery guidance. If notification delivery fails, a message box retains that same guidance. An active-layout change is also rejected before mutation.
 
 **Updating an installed version:** close **all** ArcGIS Pro instances before installing and reopening. An earlier attempt retained a stale cached 0.1.0 DLL despite the updated package. During the subsequent QA run, only these add-ins' stale cache directories were renamed into an ignored local QA backup. The Legend Scaler DLL inside the installed package and its regenerated cached copy were verified as **0.1.2.0**, with matching SHA-256 hashes. Native checks then ran in an isolated test setup; no user working project was edited. See [validation record](../VALIDATION.md).
 
-The scale is relative to the currently selected legend. Applying 125% twice produces 156.25% of its starting size. Accepted input is 10% through 1,000%; decimal input follows the current Windows culture. At 100%, scaling the original is disabled, but creating a copy remains available.
+The scale is relative to the currently selected legend. Applying 125% twice produces 156.25% of its starting size. Accepted input is 10% through 1,000%, with an optional trailing `%`; decimal input follows the current Windows culture. Enter `1000` without a thousands separator. At 100%, resizing the original is disabled, but creating a copy remains available.
 
 ## What this version implements
 
-- A ribbon command and percentage dialog with the proposed frame dimensions.
+- A ribbon command and percentage dialog with 50%, 75%, 100%, 125%, 150%, and 200% presets, live size feedback, and proposed frame dimensions in layout units.
 - Scaling of explicit font sizes, legend gaps, patches, item indents, and the frame about its existing anchor.
 - Scaling of supported text halos, frame borders, shadows, and simple symbol effects contained in the legend definition.
 - A live copied legend for comparison, or a grouped native undo operation for changes to the original.
@@ -56,9 +58,11 @@ The build uses the local Pro assemblies and an offline NuGet configuration. It c
 
 The standalone checks validate the transformation and preservation of CIM properties. They **do not prove** in-app rendering, native undo, PDF export, or save/reopen behavior. Those require the native acceptance checks below.
 
-Verified locally: Pro 3.7.2 assemblies, .NET SDK 10.0.204, Release compilation with zero warnings/errors, 17 passing checks including cancellation/restoration, valid DAML schema, and validated package contents. The cancellation checks exercise the actual edit wrapper, with simulated mutations; they do not establish native restoration behavior.
+Verified locally for **0.1.3**: Pro 3.7.2 assemblies, .NET SDK 10.0.204, Release compilation with zero warnings/errors, 21 passing checks including percentage input and cancellation/restoration, valid DAML schema, and validated package contents. The cancellation checks exercise the actual edit wrapper, with simulated mutations; they do not establish native restoration behavior.
 
 ## Native verification
+
+The **0.1.3 dialog changes have not been exercised in Pro**. Preset interaction, copy/original selection, layout-unit display, completion/overflow notifications, reporting a failed restoration after close, and keyboard exit remain native acceptance checks for this version. The evidence below belongs to **0.1.2**, before these dialog changes.
 
 The following checks passed in **ArcGIS Pro 3.7.2**, using **Test Legend** in the isolated **Addin QA** test setup with the verified 0.1.2.0 DLL:
 
@@ -72,7 +76,8 @@ These results establish dialog exit and the tested original-frame scaling/Undo b
 
 | Case | Expected result |
 | --- | --- |
-| Close, Esc, and title-bar X while work is queued or running | Dialog closes; canceled queued work does not edit a legend; unfinished mutations restore safely; no late dialog reappears |
+| 0.1.3 presets, typed percentages, and output choice | Correct live feedback and frame units; copy is the default; 100% permits copy but disables original resizing; notification identifies completion or overflow |
+| Close, Esc, and title-bar X while work is queued or running | Dialog closes; canceled queued work does not edit a legend; unfinished mutations restore safely; ordinary cancellation stays quiet; failed restoration reports recovery guidance without reopening the resize dialog |
 | Simple polygon, line, and point legends at 50%, 125%, and 200% | Fonts, gaps, patches, and frame change as specified; record any map-symbol mismatch |
 | Mixed font sizes, hidden title, zero spacing | Relative text sizes remain correct; hidden/zero settings remain intact |
 | Copy preview | Original unchanged; separate live legend appears beside it |
@@ -90,6 +95,7 @@ The first product decision after those checks is whether patch-based scaling is 
 - `src/LegendScaler/LegendScaling.cs`: detached CIM transformation and warnings.
 - `src/LegendScaler/LegendScaleService.cs`: layout changes, copy placement, fitting, undo grouping, and recovery.
 - `src/LegendScaler/ScaleLegendWindow.xaml`: percentage dialog.
+- `src/LegendScaler/LegendScaleInput.cs`: culture-aware percentage input and relative-size feedback.
 - `tests/LegendScaler.Checks/`: standalone CIM regression checks.
 - `build.ps1`: build, checks, schema validation, and package creation.
 

@@ -32,15 +32,9 @@ public static class CalloutGraphicBuilder
         double fontSize,
         double lineWidth)
     {
-        ArgumentNullException.ThrowIfNull(text);
+        var trimmedText = NormalizeText(text);
         ArgumentNullException.ThrowIfNull(labelPosition);
         ArgumentNullException.ThrowIfNull(anchors);
-
-        var trimmedText = text.Trim();
-        if (trimmedText.Length == 0 || trimmedText.Length > MaximumTextLength)
-            throw new ArgumentException($"Enter between 1 and {MaximumTextLength} characters of label text.", nameof(text));
-        if (trimmedText.Any(character => char.IsControl(character) && character is not '\r' and not '\n' and not '\t'))
-            throw new ArgumentException("Label text contains an unsupported control character.", nameof(text));
 
         ValidateSize(fontSize, MinimumFontSize, MaximumFontSize, nameof(fontSize));
         ValidateSize(lineWidth, MinimumLineWidth, MaximumLineWidth, nameof(lineWidth));
@@ -98,6 +92,28 @@ public static class CalloutGraphicBuilder
             Symbol = new CIMSymbolReference { Symbol = textSymbol },
             Leaders = leaders
         };
+    }
+
+    /// <summary>Validates and trims literal label text without adding CIM formatting escapes.</summary>
+    public static string NormalizeText(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (!TryNormalizeText(text, out var normalizedText, out var error))
+            throw new ArgumentException(error, nameof(text));
+        return normalizedText;
+    }
+
+    internal static bool TryNormalizeText(string? text, out string normalizedText, out string error)
+    {
+        normalizedText = text?.Trim() ?? string.Empty;
+        error = "";
+        if (normalizedText.Length == 0)
+            error = "Enter label text or use a common attribute value.";
+        else if (normalizedText.Length > MaximumTextLength)
+            error = $"Label text must contain at most {MaximumTextLength} characters.";
+        else if (text!.Any(character => char.IsControl(character) && character is not '\r' and not '\n' and not '\t'))
+            error = "Remove unsupported control characters from the label text.";
+        return error.Length == 0;
     }
 
     /// <summary>
